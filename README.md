@@ -5,7 +5,7 @@
 3. Do NOT upload all of the data to the Github Repo. It's bad practice.
 4. You will not be able to push any last updates past the submission deadline. Make sure you plan accordingly!
 5. Please make sure that your readme includes a brief description of what your code does as well as instructions on how to run your code.
-6. Please do not set your repos to public until after presentations.
+6. Please do not set your repos to public until after the presentations!
 
 ## Communications
 Communication will primarily happen through Discord: https://discord.gg/9U29z5Qh
