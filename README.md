@@ -4,15 +4,16 @@
 
 ## Submission Guidelines:
 1. Do NOT upload your API key to your Github Repo. This is very bad practice. If any API keys are found after the deadline, you will be disqualified!
-2. Do NOT upload all of the data to the Github Repo. It's bad practice.
-3. You will not be able to push any last updates past the submission deadline. Make sure you plan accordingly!
-4. Please make sure that your readme includes a brief description of what your code does as well as instructions on how to run your code.
+3. Do NOT upload all of the data to the Github Repo. It's bad practice.
+4. You will not be able to push any last updates past the submission deadline. Make sure you plan accordingly!
+5. Please make sure that your readme includes a brief description of what your code does as well as instructions on how to run your code.
+6. Please do not set your repos to public until after presentations.
 
 ### Grounds for Disqualification
 1. If any API keys are found in your final submitted Github Repo, you will be disqualified.
 2. If you upload the entirety of the dataset to the final submitted Github Repo, you will be disqualified. Note: A portion of the data can be submitted if needed for your submission.
 
-We understand mistakes happen. Thus, if any of the above happens, that's okay, just make sure that you remove them from your repo before the deadline.
+We understand mistakes happen. Thus, if any of the above happens, that's okay, just make sure that you remove them from your repo before the deadline (they will appear in the history, but that will not disqualify you).
 
 ## Communications
 Communication will primarily happen through Discord: https://discord.gg/9U29z5Qh
@@ -20,19 +21,47 @@ Communication will primarily happen through Discord: https://discord.gg/9U29z5Qh
 ## Data
 Link to the data is here as well as on Discord: https://www.kaggle.com/datasets/davidcariboo/player-scores
 
-## How to keep an LLM API key safe from bad actors.
-**IMPORTANT**: You should NEVER hardcode your API key into your file.
-1. You should keep your API key in a `.env` file.
+## Git cloning
+To download this repository and push/pull from here, you will need `git` installed on your device ([https://git-scm.com/install/](https://github.com/git-guides/install-git)).
+
+Git clone (first downloada of the Github repo)
+```
+git clone <your-repository-url-here>
+```
+
+Git Push (push updates to Github Repo
+```
+# 1. Stage all your changes
+git add .
+
+# 2. Commit your changes with a clear message
+git commit -m "Added my new feature"
+
+# 3. Push your commits to GitHub
+git push
+```
+
+Git Pull (pull updates from Github Repo)
+```
+git pull
+```
+
+## LLMs
+ChatGPT API keys will be provided (1 per team). Please contact **mateusz** in Discord to ask for the key.
+
+### How to keep an LLM API key safe from bad actors.
+**IMPORTANT**: You should NEVER hardcode your API key into your file. I have included an example `.env.example` and `.gitignore` to get you started.
+1. You should rename `.env.example` to `.env` keep your API key in a `.env` file.
 2. You should set your `.gitignore` to contain any files you don't want uploaded to github (`.env`, `data/`, `output/`, etc.).
 
-`.env` should contain:
+`.env` example:
 
 ```
 OPENAI_API_KEY=your-api-key-here
 GEMINI_API_KEY=your-api-key-here
 ```
 
-`.gitignore` should contain:
+`.gitignore` example:
 
 ```
 .env
