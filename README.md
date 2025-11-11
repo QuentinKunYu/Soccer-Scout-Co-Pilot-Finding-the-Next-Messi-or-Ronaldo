@@ -7,12 +7,6 @@
 5. Please make sure that your readme includes a brief description of what your code does as well as instructions on how to run your code.
 6. Please do not set your repos to public until after presentations.
 
-### Grounds for Disqualification
-1. If any API keys are found in your final submitted Github Repo, you will be disqualified.
-2. If you upload the entirety of the dataset to the final submitted Github Repo, you will be disqualified. Note: A portion of the data can be submitted if needed for your submission.
-
-We understand mistakes happen. Thus, if any of the above happens, that's okay, just make sure that you remove them from your repo before the deadline (they will appear in the history, but that will not disqualify you).
-
 ## Communications
 Communication will primarily happen through Discord: https://discord.gg/9U29z5Qh
 
