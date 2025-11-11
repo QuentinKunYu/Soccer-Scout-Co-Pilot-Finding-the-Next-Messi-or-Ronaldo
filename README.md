@@ -1,7 +1,5 @@
 # Hackathon 2025 Template
 
-## Business Problem
-
 ## Submission Guidelines:
 1. Do NOT upload your API key to your Github Repo. This is very bad practice. If any API keys are found after the deadline, you will be disqualified!
 3. Do NOT upload all of the data to the Github Repo. It's bad practice.
