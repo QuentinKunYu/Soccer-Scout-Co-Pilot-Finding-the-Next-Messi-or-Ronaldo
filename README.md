@@ -12,6 +12,7 @@ Communication will primarily happen through Discord: https://discord.gg/9U29z5Qh
 
 ## Data
 Link to the data is here as well as on Discord: https://www.kaggle.com/datasets/davidcariboo/player-scores
+Link to the data dictionary is here as well as on Discord: https://docs.google.com/document/d/1AvAvjpTnqF_sav1Zg5wq36RS-8uyjyCQRlzwSHX57Vs/edit?usp=drive_link
 
 ## Git cloning
 To download this repository and push/pull from here, you will need `git` installed on your device ([https://git-scm.com/install/](https://github.com/git-guides/install-git)).
