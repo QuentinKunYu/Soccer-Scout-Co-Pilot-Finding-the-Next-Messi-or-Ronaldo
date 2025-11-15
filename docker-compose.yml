@@ -1,0 +1,15 @@
+
+services:
+  scouting_app:
+    build: .
+    container_name: scouting-app
+    # Bind port 8501 so the Streamlit UI is reachable from the host.
+    ports:
+      - "8501:8501"
+    # Load API keys or other secrets without baking them into the image.
+    env_file:
+      - .env
+    # Mount the repo for live-editing; Streamlit picks up changes automatically.
+    volumes:
+      - ./:/app
+    command: ["streamlit", "run", "app/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
