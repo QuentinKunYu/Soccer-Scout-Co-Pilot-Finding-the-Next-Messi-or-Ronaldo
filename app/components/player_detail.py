@@ -445,7 +445,7 @@ def _bullet_chart(
             ],
         ),
         alt.Chart(rule_df)
-        .mark_rule(color=BENCHMARK_COLOR, strokeWidth=7.5)
+        .mark_rule(color=BENCHMARK_COLOR, strokeWidth=6.5)
         .encode(
             x=alt.X("value:Q", **x_kwargs),
             y=alt.Y("metric:N", title=None),
