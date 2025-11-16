@@ -8,11 +8,20 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from joblib import dump
 
 
-# ---------- Helpers ----------
+# ----------------- 路徑設定 -----------------
 
-def load_player_snapshot(path: str = "data/processed/player_snapshot.parquet") -> pd.DataFrame:
+PLAYER_SNAPSHOT_PATH = "data/processed/player_snapshot.parquet"
+REG_OUTPUT_PATH = "data/processed/regression_outputs.parquet"
+REG_METRICS_PATH = "data/processed/regression_metrics.json"
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(MODEL_DIR, "xgb_regressor.joblib")
+FEATURES_PATH = os.path.join(MODEL_DIR, "xgb_features.json")
+
+
+# ----------------- 資料讀取 & feature 構建 -----------------
+
+def load_player_snapshot(path: str = PLAYER_SNAPSHOT_PATH) -> pd.DataFrame:
     df = pd.read_parquet(path)
-    # 確保 snapshot_date 是 datetime
     if not np.issubdtype(df["snapshot_date"].dtype, np.datetime64):
         df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")
     return df
@@ -20,11 +29,9 @@ def load_player_snapshot(path: str = "data/processed/player_snapshot.parquet") -
 
 def build_feature_matrix(df: pd.DataFrame):
     """
-    從 player_snapshot 裡選出 feature + target。
-    回傳:
-        X_df: features (DataFrame, 保留欄位名給 SHAP 用)
-        y:    target (np.array)
-        data: 與 X_df, y 對齊的原始資料（有 player_id / snapshot_date / y_growth ...）
+    從 player_snapshot 建 feature matrix & target。
+      - target: y_growth
+      - 返回 X_df, y, data (與 X_df / y 對齊的原表)
     """
     target_col = "y_growth"
 
@@ -33,51 +40,57 @@ def build_feature_matrix(df: pd.DataFrame):
         "age",
         "height_in_cm",
         "market_value_in_eur",
-        "club_total_value",
-        "squad_size",
-        "average_age",
+        "highest_market_value_in_eur",
+        "mv_ratio_to_peak",
+        "years_to_contract_end",
+        "minutes_total",
+        "games_played",
+        "minutes_per_game",
         "goals_per_90",
         "assists_per_90",
-        "minutes_per_game",
+        "delta_minutes_total",
         "delta_goals_per_90",
         "delta_assists_per_90",
-        "delta_minutes_per_game",
-        "mv_change_rate",
+        "club_total_market_value",
+        "club_win_rate",
+        "club_goal_diff_per_game",
+        "league_strength",
     ]
 
-    # 類別特徵，用 one-hot
+    # 二元 flags
+    bin_cols = [
+        "league_is_major",
+        "is_top5_league",
+        "has_recent_transfer",
+        "moved_to_bigger_club_flag",
+    ]
+
+    # 類別特徵（one-hot）
     cat_cols = [
         "position",
         "sub_position",
+        "foot",
+        "country_of_citizenship",
+        "current_club_name",
         "league_name",
         "league_country",
-        "club_name",
-        "country_of_citizenship",
     ]
 
-    # 二元 flag
-    bin_cols = [
-        "league_is_major",
-        "is_left_footed",
-        "is_right_footed",
-    ]
-
-    # 只保留有 target 的 row
+    # 只保留有 label 的 rows
     data = df.dropna(subset=[target_col]).copy()
 
-    # 再次保險 snapshot_date 是 datetime
     if not np.issubdtype(data["snapshot_date"].dtype, np.datetime64):
         data["snapshot_date"] = pd.to_datetime(data["snapshot_date"], errors="coerce")
 
-    # 數值 + 二元
+    # numeric / binary
     X_num = data[[c for c in num_cols if c in data.columns]].copy()
     X_bin = data[[c for c in bin_cols if c in data.columns]].copy()
 
-    # 類別 one-hot
-    cat_cols_present = [c for c in cat_cols if c in data.columns]
-    if cat_cols_present:
+    # categorical -> one-hot
+    cat_present = [c for c in cat_cols if c in data.columns]
+    if cat_present:
         X_cat = pd.get_dummies(
-            data[cat_cols_present],
+            data[cat_present],
             dummy_na=True,
             drop_first=True,
         )
@@ -86,27 +99,34 @@ def build_feature_matrix(df: pd.DataFrame):
 
     # 合併
     X_df = pd.concat([X_num, X_bin, X_cat], axis=1)
-
-    # target
     y = data[target_col].values
 
-    print(f"Feature matrix shape: {X_df.shape}, target length: {len(y)}")
-
+    print(f"[build_feature_matrix] X shape = {X_df.shape}, y length = {len(y)}")
     return X_df, y, data
 
 
-def split_by_time(data: pd.DataFrame, X_df: pd.DataFrame, y: np.ndarray):
+# ----------------- 時間切分 & Rolling Validation -----------------
+
+def split_by_time(
+    data: pd.DataFrame,
+    X_df: pd.DataFrame,
+    y: np.ndarray,
+    train_end_year: int = 2020,
+    valid_start_year: int = 2021,
+    valid_end_year: int = 2022,
+    test_start_year: int = 2023,
+):
     """
-    用 snapshot_date 的年份做 time-based split:
-        train: year <= 2020
-        valid: 2021–2022
-        test:  year > 2022
+    最終模型用的 train/valid/test 切法：
+      - train: <= train_end_year
+      - valid: valid_start_year ~ valid_end_year
+      - test : >= test_start_year
     """
     years = data["snapshot_date"].dt.year
 
-    train_mask = years <= 2020
-    valid_mask = (years > 2020) & (years <= 2022)
-    test_mask = years > 2022
+    train_mask = years <= train_end_year
+    valid_mask = (years >= valid_start_year) & (years <= valid_end_year)
+    test_mask = years >= test_start_year
 
     X_train = X_df[train_mask]
     y_train = y[train_mask]
@@ -117,17 +137,56 @@ def split_by_time(data: pd.DataFrame, X_df: pd.DataFrame, y: np.ndarray):
     X_test = X_df[test_mask]
     y_test = y[test_mask]
 
-    print("Train size:", X_train.shape, "Valid size:", X_valid.shape, "Test size:", X_test.shape)
+    print(
+        "[split_by_time] "
+        f"train={X_train.shape}, valid={X_valid.shape}, test={X_test.shape}"
+    )
 
-    # 把 mask 也回傳給 SHAP / 其他用途
-    masks = {
-        "train": train_mask,
-        "valid": valid_mask,
-        "test": test_mask,
-    }
-
+    masks = {"train": train_mask, "valid": valid_mask, "test": test_mask}
     return (X_train, y_train), (X_valid, y_valid), (X_test, y_test), masks
 
+
+def rolling_validation_scores(X_df, y, data, model_params, val_years):
+    """
+    滾動式驗證：
+      Fold k: Train < val_year_k, Validate == val_year_k
+    """
+    years = data["snapshot_date"].dt.year
+    results = []
+
+    for val_year in val_years:
+        train_mask = years < val_year
+        valid_mask = years == val_year
+
+        X_train, y_train = X_df[train_mask], y[train_mask]
+        X_valid, y_valid = X_df[valid_mask], y[valid_mask]
+
+        if len(X_valid) == 0 or len(X_train) == 0:
+            continue
+
+        model = XGBRegressor(**model_params)
+        model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=False)
+
+        y_pred = model.predict(X_valid)
+        mse = mean_squared_error(y_valid, y_pred)
+        rmse = float(np.sqrt(mse))
+        mae = float(mean_absolute_error(y_valid, y_pred))
+        r2 = float(r2_score(y_valid, y_pred))
+
+        print(f"[Fold {val_year}] RMSE={rmse:.4f} MAE={mae:.4f} R2={r2:.4f}")
+        results.append({"year": val_year, "rmse": rmse, "mae": mae, "r2": r2})
+
+    if results:
+        rv_df = pd.DataFrame(results)
+        print("\n[Rolling Validation] summary:")
+        print(rv_df.describe())
+    else:
+        print("[Rolling Validation] No valid folds (check year ranges).")
+
+    return results
+
+
+# ----------------- 評估函數 -----------------
 
 def evaluate_regression(model, X, y, split_name: str):
     y_pred = model.predict(X)
@@ -139,22 +198,20 @@ def evaluate_regression(model, X, y, split_name: str):
     return rmse, mae, r2, y_pred
 
 
-# ---------- Main pipeline ----------
+# ----------------- 主流程 -----------------
 
 def main():
-    # 1) 讀 player_snapshot
+    # 1) 讀取 snapshot
     df = load_player_snapshot()
 
-    # 2) 建 feature matrix
+    # 2) feature matrix + target
     X_df, y, data = build_feature_matrix(df)
+    years = data["snapshot_date"].dt.year
+    unique_years = sorted(years.unique())
+    print(f"[main] years in data: {unique_years[:5]} ... {unique_years[-5:]}")
 
-    # 3) time-based split
-    (X_train, y_train), (X_valid, y_valid), (X_test, y_test), masks = split_by_time(
-        data, X_df, y
-    )
-
-    # 4) XGBoost 模型
-    model = XGBRegressor(
+    # 3) XGBoost 參數（之後可以微調）
+    model_params = dict(
         n_estimators=800,
         learning_rate=0.05,
         max_depth=6,
@@ -163,10 +220,34 @@ def main():
         reg_lambda=1.0,
         reg_alpha=0.1,
         random_state=42,
-        tree_method="hist",   # CPU 快速 histogram
+        tree_method="hist",
         n_jobs=-1,
     )
 
+    # 4) Rolling validation：例如 2019–2023
+    #    只用資料裡真的存在的年份
+    candidate_val_years = [2019, 2020, 2021, 2022, 2023]
+    val_years = [y for y in candidate_val_years if y in unique_years]
+
+    if len(val_years) >= 1:
+        print(f"[main] Rolling validation years: {val_years}")
+        rolling_validation_scores(X_df, y, data, model_params, val_years)
+    else:
+        print("[main] No overlapping years for rolling validation, skip.")
+
+    # 5) 最終 train / valid / test 切分（跟之前一樣）
+    (X_train, y_train), (X_valid, y_valid), (X_test, y_test), masks = split_by_time(
+        data,
+        X_df,
+        y,
+        train_end_year=2020,
+        valid_start_year=2021,
+        valid_end_year=2022,
+        test_start_year=2023,
+    )
+
+    # 6) 用整個 train set 訓練最終模型
+    model = XGBRegressor(**model_params)
     model.fit(
         X_train,
         y_train,
@@ -174,14 +255,14 @@ def main():
         verbose=True,
     )
 
-    # 5) 評估
+    # 7) train / valid / test 評估
     _, _, _, _ = evaluate_regression(model, X_train, y_train, "train")
     _, _, _, _ = evaluate_regression(model, X_valid, y_valid, "valid")
-    rmse_test, mae_test, r2_test, y_pred_test = evaluate_regression(
+    rmse_test, mae_test, r2_test, _ = evaluate_regression(
         model, X_test, y_test, "test"
     )
 
-    # 6) 對所有 row 做預測（方便後續 merge）
+    # 8) 對所有 row 做預測，算 mv_pred_1y
     y_pred_all = model.predict(X_df)
     data_out = data.copy()
     data_out["y_growth_pred"] = y_pred_all
@@ -189,9 +270,8 @@ def main():
         data_out["y_growth_pred"]
     )
 
-    # 7) 存 regression_outputs（先不含 SHAP，之後 shap_regression 會補）
-    os.makedirs("data/processed", exist_ok=True)
-    out_path = "data/processed/regression_outputs.parquet"
+    # 9) 存 regression_outputs（先不含 SHAP，之後 shap_regression 會補 reg_shap_top_features）
+    os.makedirs(os.path.dirname(REG_OUTPUT_PATH), exist_ok=True)
 
     cols_to_save = [
         "player_id",
@@ -203,29 +283,28 @@ def main():
     ]
     cols_to_save = [c for c in cols_to_save if c in data_out.columns]
 
-    data_out[cols_to_save].to_parquet(out_path, index=False)
-    print(f"Saved regression_outputs -> {out_path}")
+    data_out[cols_to_save].to_parquet(REG_OUTPUT_PATH, index=False)
+    print(f"[train_regression] Saved regression_outputs -> {REG_OUTPUT_PATH}")
 
-    # 8) 存 metrics
+    # 10) 存 metrics
     metrics = {
         "rmse_test": rmse_test,
         "mae_test": mae_test,
         "r2_test": r2_test,
     }
-    with open("data/processed/regression_metrics.json", "w") as f:
+    os.makedirs(os.path.dirname(REG_METRICS_PATH), exist_ok=True)
+    with open(REG_METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2)
-    print("Saved regression_metrics.json")
+    print(f"[train_regression] Saved regression_metrics -> {REG_METRICS_PATH}")
 
-    # 9) 存 model + feature columns，給 SHAP 用
-    os.makedirs("models", exist_ok=True)
-    model_path = "models/xgb_regressor.joblib"
-    dump(model, model_path)
-    print(f"Saved XGBoost model -> {model_path}")
+    # 11) 存 model + feature 名（給 SHAP 用）
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    dump(model, MODEL_PATH)
+    print(f"[train_regression] Saved XGBoost model -> {MODEL_PATH}")
 
-    feat_path = "models/xgb_features.json"
-    with open(feat_path, "w") as f:
+    with open(FEATURES_PATH, "w") as f:
         json.dump(list(X_df.columns), f)
-    print(f"Saved feature names -> {feat_path}")
+    print(f"[train_regression] Saved feature names -> {FEATURES_PATH}")
 
 
 if __name__ == "__main__":

@@ -7,9 +7,8 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 def main():
     df = pd.read_parquet("data/processed/regression_outputs.parquet")
 
-    # 需要 y_growth 才能算 metrics
     if "y_growth" not in df.columns:
-        raise ValueError("regression_outputs.parquet 中沒有 y_growth 欄位，無法計算 metrics。")
+        raise ValueError("regression_outputs.parquet 中沒有 y_growth，無法計算 metrics")
 
     y_true = df["y_growth"].values
     y_pred = df["y_growth_pred"].values
@@ -28,7 +27,7 @@ def main():
     }
     with open("data/processed/regression_metrics_eval.json", "w") as f:
         json.dump(metrics, f, indent=2)
-    print("Saved regression_metrics_eval.json")
+    print("[evaluate_regression] Saved regression_metrics_eval.json")
 
 
 if __name__ == "__main__":
