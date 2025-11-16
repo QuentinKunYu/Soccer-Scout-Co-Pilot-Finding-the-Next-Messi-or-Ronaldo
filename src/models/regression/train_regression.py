@@ -6,16 +6,22 @@ import pandas as pd
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from joblib import dump
+import shap
 
 
 # ----------------- 路徑設定 -----------------
 
 PLAYER_SNAPSHOT_PATH = "data/processed/player_snapshot.parquet"
 REG_OUTPUT_PATH = "data/processed/regression_outputs.parquet"
+REG_PREDICTIONS_CSV = "data/processed/player_predictions.csv"  # New: CSV output for predictions
 REG_METRICS_PATH = "data/processed/regression_metrics.json"
 MODEL_DIR = "models"
 MODEL_PATH = os.path.join(MODEL_DIR, "xgb_regressor.joblib")
 FEATURES_PATH = os.path.join(MODEL_DIR, "xgb_features.json")
+# ----------------- 設定 -----------------
+FINAL_TRAIN_END_YEAR = 2024      # 最終模型訓練到哪一年
+TARGET_YEAR_FOR_PRED = 2024      # 用哪一年 snapshot 來預測下一年 (→ 2025)
+
 
 
 # ----------------- 資料讀取 & feature 構建 -----------------
@@ -224,10 +230,9 @@ def main():
         n_jobs=-1,
     )
 
-    # 4) Rolling validation：例如 2019–2023
-    #    只用資料裡真的存在的年份
+    # 4) Rolling validation：例如 2019–2023（跟原本一樣）
     candidate_val_years = [2019, 2020, 2021, 2022, 2023]
-    val_years = [y for y in candidate_val_years if y in unique_years]
+    val_years = [yy for yy in candidate_val_years if yy in unique_years]
 
     if len(val_years) >= 1:
         print(f"[main] Rolling validation years: {val_years}")
@@ -235,7 +240,7 @@ def main():
     else:
         print("[main] No overlapping years for rolling validation, skip.")
 
-    # 5) 最終 train / valid / test 切分（跟之前一樣）
+    # 5) train / valid / test 切分（用來算 metrics）
     (X_train, y_train), (X_valid, y_valid), (X_test, y_test), masks = split_by_time(
         data,
         X_df,
@@ -246,23 +251,33 @@ def main():
         test_start_year=2023,
     )
 
-    # 6) 用整個 train set 訓練最終模型
-    model = XGBRegressor(**model_params)
-    model.fit(
+    # 6) 評估用模型（只訓練到 2020）
+    model_eval = XGBRegressor(**model_params)
+    model_eval.fit(
         X_train,
         y_train,
         eval_set=[(X_valid, y_valid)],
         verbose=True,
     )
 
-    # 7) train / valid / test 評估
-    _, _, _, _ = evaluate_regression(model, X_train, y_train, "train")
-    _, _, _, _ = evaluate_regression(model, X_valid, y_valid, "valid")
+    # 7) train / valid / test 評估（寫進 metrics.json）
+    _, _, _, _ = evaluate_regression(model_eval, X_train, y_train, "train")
+    _, _, _, _ = evaluate_regression(model_eval, X_valid, y_valid, "valid")
     rmse_test, mae_test, r2_test, _ = evaluate_regression(
-        model, X_test, y_test, "test"
+        model_eval, X_test, y_test, "test"
     )
 
-    # 8) 對所有 row 做預測，算 mv_pred_1y
+    # 8) 最終模型：用 <= 2024 的所有資料訓練，專門拿來預測 2025
+    final_train_mask = years <= FINAL_TRAIN_END_YEAR
+    X_train_final = X_df[final_train_mask]
+    y_train_final = y[final_train_mask]
+
+    print(f"[main] Final training set (<= {FINAL_TRAIN_END_YEAR}): {X_train_final.shape}")
+
+    model = XGBRegressor(**model_params)
+    model.fit(X_train_final, y_train_final)
+
+    # 9) 先對所有 row 做預測（方便 debug / 另存整體結果）
     y_pred_all = model.predict(X_df)
     data_out = data.copy()
     data_out["y_growth_pred"] = y_pred_all
@@ -270,23 +285,66 @@ def main():
         data_out["y_growth_pred"]
     )
 
-    # 9) 存 regression_outputs（先不含 SHAP，之後 shap_regression 會補 reg_shap_top_features）
-    os.makedirs(os.path.dirname(REG_OUTPUT_PATH), exist_ok=True)
+    # 10) 只保留 TARGET_YEAR_FOR_PRED (2024) 的 snapshot → 2024→2025 預測
+    print(f"\n[train_regression] Filtering to snapshots in {TARGET_YEAR_FOR_PRED}...")
+    target_mask = years == TARGET_YEAR_FOR_PRED
+    data_target = data_out[target_mask].copy()
+    print(f"[train_regression] Filtered to {len(data_target)} rows in {TARGET_YEAR_FOR_PRED}")
 
-    cols_to_save = [
+    # 對應的 X 也要用同樣 index
+    X_target = X_df.loc[data_target.index].copy()
+    X_target = X_target[X_df.columns]  # 保證欄位順序一致
+
+    # 11) 計算 SHAP（只對 2024 snapshots）
+    print("[train_regression] Computing SHAP values for target year snapshots...")
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_target)
+    shap_values = np.array(shap_values)
+    feature_names = X_target.columns.tolist()
+
+    top_k = 5
+    top_features_json = []
+    for i in range(X_target.shape[0]):
+        row_shap = shap_values[i]
+        idx_sorted = np.argsort(-np.abs(row_shap))[:top_k]
+        row_list = [
+            {"feature": feature_names[j], "shap_value": float(row_shap[j])}
+            for j in idx_sorted
+        ]
+        top_features_json.append(json.dumps(row_list))
+
+    data_target = data_target.reset_index(drop=True)
+    data_target["reg_shap_top_features"] = top_features_json
+
+    # 12) 組成輸出表：一列 = 一個球員 2024 snapshot 的 1-year 預測
+    output_cols = [
         "player_id",
         "snapshot_date",
-        "y_growth",
         "y_growth_pred",
-        "market_value_in_eur",
         "mv_pred_1y",
+        "reg_shap_top_features",
     ]
-    cols_to_save = [c for c in cols_to_save if c in data_out.columns]
+    regression_outputs = data_target[output_cols].copy()
 
-    data_out[cols_to_save].to_parquet(REG_OUTPUT_PATH, index=False)
+    # 確保 snapshot_date 是日期
+    if not pd.api.types.is_datetime64_any_dtype(regression_outputs["snapshot_date"]):
+        regression_outputs["snapshot_date"] = pd.to_datetime(regression_outputs["snapshot_date"])
+
+    # 排序
+    regression_outputs = regression_outputs.sort_values("player_id")
+
+    # 13) 存 parquet + csv（給隊友）
+    os.makedirs(os.path.dirname(REG_OUTPUT_PATH), exist_ok=True)
+    regression_outputs.to_parquet(REG_OUTPUT_PATH, index=False)
     print(f"[train_regression] Saved regression_outputs -> {REG_OUTPUT_PATH}")
 
-    # 10) 存 metrics
+    os.makedirs(os.path.dirname(REG_PREDICTIONS_CSV), exist_ok=True)
+    regression_outputs.to_csv(REG_PREDICTIONS_CSV, index=False)
+    print(f"[train_regression] Saved player predictions CSV -> {REG_PREDICTIONS_CSV}")
+    print(f"[train_regression] Output shape: {regression_outputs.shape}")
+    print(f"[train_regression] Columns: {list(regression_outputs.columns)}")
+
+    # 14) 存 metrics（用 eval 模型）
     metrics = {
         "rmse_test": rmse_test,
         "mae_test": mae_test,
@@ -297,7 +355,7 @@ def main():
         json.dump(metrics, f, indent=2)
     print(f"[train_regression] Saved regression_metrics -> {REG_METRICS_PATH}")
 
-    # 11) 存 model + feature 名（給 SHAP 用）
+    # 15) 存最終模型 + feature 名（for SHAP / 之後再用）
     os.makedirs(MODEL_DIR, exist_ok=True)
     dump(model, MODEL_PATH)
     print(f"[train_regression] Saved XGBoost model -> {MODEL_PATH}")
@@ -305,6 +363,7 @@ def main():
     with open(FEATURES_PATH, "w") as f:
         json.dump(list(X_df.columns), f)
     print(f"[train_regression] Saved feature names -> {FEATURES_PATH}")
+
 
 
 if __name__ == "__main__":
