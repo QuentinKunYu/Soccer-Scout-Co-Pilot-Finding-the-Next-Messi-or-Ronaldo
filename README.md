@@ -80,7 +80,7 @@ Our system identifies players who:
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Data Processing Pipeline                        │
+│              Data Processing Pipeline                      │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  1. build_player_snapshot.py                        │   │
 │  │     → Aggregates player statistics                  │   │
@@ -95,24 +95,24 @@ Our system identifies players who:
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                 Machine Learning Models                      │
-│  ┌──────────────────────┐  ┌───────────────────────────┐   │
-│  │  XGBoost Regression  │  │  LightGBM Classification  │   │
-│  │  (Market Value)      │  │  (Breakout Prediction)    │   │
-│  └──────────┬───────────┘  └──────────┬────────────────┘   │
+│                 Machine Learning Models                     │
+│  ┌──────────────────────┐  ┌───────────────────────────┐    │
+│  │  XGBoost Regression  │  │  LightGBM Classification  │    │
+│  │  (Market Value)      │  │  (Breakout Prediction)    │    │
+│  └──────────┬───────────┘  └──────────┬────────────────┘    │
 └─────────────┼──────────────────────────┼────────────────────┘
               │                          │
               └────────┬─────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│           generate_recommendations.py                        │
-│     Combines all predictions into ranked list                │
+│           generate_recommendations.py                       │
+│     Combines all predictions into ranked list               │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Streamlit Dashboard + GPT-4 Analysis            │
-│         Interactive UI for scouts and analysts               │
+│              Streamlit Dashboard + GPT-4 Analysis           │
+│         Interactive UI for scouts and analysts              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -294,7 +294,7 @@ Open browser to `http://localhost:8501`
 
 #### 4. **AI Analysis Report**
 - Click "Generate Complete Analysis Report"
-- GPT-4 analyzes player data and provides:
+- GPT-5 analyzes player data and provides:
   - Strengths and weaknesses
   - Playing style analysis
   - Scouting recommendations
