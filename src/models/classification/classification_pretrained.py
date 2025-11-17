@@ -1,20 +1,43 @@
 """
-Use pretrained LightGBM classification model to generate player breakout
-predictions (no retraining).
+Pretrained LightGBM Classification Model for Player Breakout Prediction
 
-Usage (for non-technical users):
+This module provides inference functionality for a pretrained LightGBM classification model
+that predicts the probability of a player experiencing a "breakout" season.
 
-    python classification_pretrained.py
+A breakout is defined as a significant improvement in a player's performance metrics and
+market value trajectory relative to their position and age group. The model uses position-specific
+weighting schemes and age factors to account for different development patterns across positions.
 
-This will:
-- Load the latest player_snapshot.parquet
-- Load pretrained model + feature list
-- Recreate feature matrix
-- Predict breakout probability
-- Compute per-player SHAP top features
-- Save outputs to:
-    data/processed/classification_outputs.parquet
-    data/processed/breakout_predictions.csv
+The model predicts:
+    - breakout_prob: Probability (0-1) that a player will experience a breakout
+    - clf_shap_top_features: Top 5 most important features for each prediction (SHAP values)
+
+The model uses the same feature engineering pipeline as the training script, including:
+    - Performance metrics (goals, assists, minutes per 90)
+    - Market value momentum and percentiles
+    - Transfer history (recent moves to bigger clubs)
+    - Discipline features (yellow/red cards)
+    - Position-specific breakout scoring
+
+Input:
+    - data/processed/player_snapshot.parquet: Player snapshot dataset
+    - models/lgb_classifier.joblib: Pretrained LightGBM model
+    - models/lgb_features.json: List of feature names used during training
+
+Output:
+    - data/processed/classification_outputs.parquet: Predictions with SHAP features
+    - data/processed/breakout_predictions.csv: CSV version of predictions
+
+Usage:
+    python -m src.models.classification.classification_pretrained
+    
+    Or import and use programmatically:
+    from src.models.classification.classification_pretrained import run_pretrained
+    run_pretrained(
+        snapshot_path="data/processed/player_snapshot.parquet",
+        model_path="models/lgb_classifier.joblib",
+        features_path="models/lgb_features.json"
+    )
 """
 
 import os

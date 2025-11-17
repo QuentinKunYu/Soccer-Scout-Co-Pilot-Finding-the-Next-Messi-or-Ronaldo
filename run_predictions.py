@@ -1,24 +1,43 @@
 """
-Main script to run complete prediction pipeline.
+Main script to run the complete player prediction pipeline.
 
-This script:
-1. Builds the player snapshot from raw data
-2. Builds player development dataset (aging / curves)
-3. Runs pretrained regression model for market value growth
-4. Runs pretrained classification model for breakout prediction
-5. Generates final player recommendations by combining all outputs
+This script orchestrates the entire machine learning pipeline for player analysis,
+from raw data processing to final recommendation generation. It provides a unified
+interface for running all pipeline stages or executing specific components.
+
+Pipeline Stages:
+1. Build Player Snapshot: Process raw CSV files into a clean player snapshot dataset
+2. Build Development Dataset: Generate aging curves and development metrics
+3. Regression Model: Predict market value growth using pretrained XGBoost model
+4. Classification Model: Predict breakout probability using pretrained LightGBM model
+5. Generate Recommendations: Combine all outputs into final recommendation dataset
+
+The script supports flexible execution modes:
+- Full pipeline: Run all stages sequentially
+- Partial execution: Run only specific models or skip certain steps
+- Recommendations only: Generate final output from existing model predictions
 
 Usage:
+    # Run complete pipeline
     python run_predictions.py
     
-    # Or run only specific models:
+    # Run only specific models
     python run_predictions.py --regression-only
     python run_predictions.py --classification-only
     python run_predictions.py --recommendations-only
     
-    # Skip steps:
+    # Skip data preparation steps (use existing data)
     python run_predictions.py --skip-snapshot
     python run_predictions.py --skip-development
+    python run_predictions.py --skip-recommendations
+
+Output Files:
+    - data/processed/player_snapshot.parquet
+    - data/processed/development_outputs.parquet
+    - data/processed/regression_outputs.parquet
+    - data/processed/classification_outputs.parquet
+    - data/processed/player_recommendations.parquet
+    - data/processed/player_recommendations.csv
 """
 
 import sys
@@ -209,7 +228,7 @@ def main():
             traceback.print_exc()
             sys.exit(1)
     else:
-        print("\n⊳ Skipping recommendations generation")
+        print("\n Skipping recommendations generation")
 
     # ----------------- Summary -----------------
     print("\n" + "=" * 70)
@@ -236,26 +255,8 @@ def main():
     if run_recommendations:
         print("\n Final Recommendations:")
         print("  ├─ data/processed/player_recommendations.parquet")
-        print("  ├─ data/processed/player_recommendations.csv")
-        print("  └─ app/mock_data/player_recommendations.csv (for frontend)")
+        print("  └─ data/processed/player_recommendations.csv")
     
-    print("\n💡 Next Steps:")
-    print("-" * 70)
-    
-    if run_recommendations:
-        print("  ✓ View recommendations:")
-        print("    → cat data/processed/player_recommendations.csv | head")
-        print("\n  ✓ Load in Python:")
-        print("    → import pandas as pd")
-        print("    → df = pd.read_csv('data/processed/player_recommendations.csv')")
-        print("    → print(df.nlargest(20, 'breakout_prob'))")
-        print("\n  ✓ Start frontend app:")
-        print("    → cd app && npm start")
-    else:
-        print("  → Run complete pipeline: python run_predictions.py")
-        print("  → Generate recommendations: python run_predictions.py --recommendations-only")
-    
-    print("\n" + "=" * 70 + "\n")
 
 
 if __name__ == "__main__":

@@ -1,23 +1,40 @@
 """
-Generate Development Outputs Script
-====================================
+Player Development Analysis Pipeline
 
-This script implements the player development analysis pipeline, used to:
-1. Build aging curves - analyze market value and performance by age and position
-2. Calculate deviations between actual and expected player performance
-3. Generate aging_score and development_tier indicators
-4. Output the development_outputs.parquet file
+This module implements a comprehensive player development analysis system that:
+1. Builds aging curves - statistical models of expected market value and performance by age and position
+2. Calculates player deviations - measures how each player performs relative to age/position expectations
+3. Generates development indicators - composite scores and tiers for player development stage
 
-Usage:
-    python generate_development_outputs.py
+The aging curves are built using median values across all players at each age-position combination,
+providing a baseline expectation for player performance and market value. Players are then compared
+against these curves to identify those performing above or below expectations.
+
+Key outputs:
+    - expected_value_million: Expected market value based on aging curve
+    - expected_ga_per_90: Expected goals+assists per 90 minutes
+    - expected_minutes_per_90: Expected playing time per 90 minutes
+    - valuation_above_curve: Difference between actual and expected market value
+    - performance_above_curve: Difference between actual and expected G+A
+    - aging_score: Composite score indicating overall development trajectory
+    - development_tier: Categorical label (declining/normal/aging well)
 
 Input files:
-    - data/players.csv: Basic player information (including date of birth, position, etc.)
-    - data/player_valuations.csv: Player market value history
-    - data/appearances.csv: Player appearance records (including goals, assists, minutes played, etc.)
+    - data/players.csv: Basic player information (date of birth, position, etc.)
+    - data/player_valuations.csv: Historical player market value records
+    - data/appearances.csv: Player match appearances (goals, assists, minutes played)
+    - data/competitions.csv: Competition metadata
+    - data/games.csv: Match information
 
 Output files:
-    - data/processed/development_outputs.parquet: Dataset containing player development metrics
+    - data/processed/development_outputs.parquet: Complete development analysis dataset
+
+Usage:
+    python build_development_dataset.py
+    
+    Or import and use programmatically:
+    from src.data_helper.build_development_dataset import main
+    main()
 """
 
 import pandas as pd

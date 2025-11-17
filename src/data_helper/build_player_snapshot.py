@@ -2,24 +2,37 @@
 """
 Build a clean player_snapshot table from raw hackathon CSVs.
 
-Usage:
-    Put this file in the ROOT of your project (the same folder that has the `data/` folder)
-    and run:
+This module processes raw football data files and creates a comprehensive
+player snapshot dataset suitable for machine learning model training and prediction.
 
-        python build_player_snapshot.py
+The pipeline performs:
+1. Base snapshot creation from player valuations with future value calculation
+2. Player information enrichment (age, position, physical attributes)
+3. Season performance feature engineering (goals, assists, minutes per 90)
+4. Club and league feature integration (club strength, league level)
+5. Club season statistics (win rate, goal difference)
+6. Transfer history features (recent transfers, moves to bigger clubs)
+7. Derived features (position groups, league levels, market value changes)
 
-Input (in data/):
-    players.csv
-    player_valuations.csv
-    appearances.csv
-    games.csv
-    clubs.csv
-    competitions.csv
-    transfers.csv
-    club_games.csv
+Input files (in data/):
+    - players.csv: Basic player information (name, DOB, position, etc.)
+    - player_valuations.csv: Historical market value records
+    - appearances.csv: Player match appearances and statistics
+    - games.csv: Match information and dates
+    - clubs.csv: Club information and market values
+    - competitions.csv: League/competition metadata
+    - transfers.csv: Player transfer history
+    - club_games.csv: Club match results and statistics
 
 Output:
-    data/processed/player_snapshot.parquet
+    - data/processed/player_snapshot.parquet: Complete player snapshot dataset
+
+Usage:
+    python build_player_snapshot.py
+    
+    Or import and use programmatically:
+    from src.data_helper.build_player_snapshot import build_player_snapshot
+    snapshot = build_player_snapshot(data_dir="data", output_path="output.parquet")
 """
 import os
 import numpy as np
