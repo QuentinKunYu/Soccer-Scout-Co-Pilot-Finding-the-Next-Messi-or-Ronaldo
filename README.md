@@ -21,7 +21,7 @@ To download this repository and push/pull from here, you will need `git` install
 
 Git clone (first downloada of the Github repo)
 ```
-git clone <your-repository-url-here>
+git clone [<your-repository-url-here>](https://github.com/NuAiHackathon2025/hackathon-2025-evan-ston-energy.git)
 ```
 
 Git Push (push updates to Github Repo
