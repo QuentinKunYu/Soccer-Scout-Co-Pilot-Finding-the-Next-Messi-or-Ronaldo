@@ -142,13 +142,13 @@ def generate_player_recommendations():
     # 7. Merge all datasets
     print("\nMerging datasets...")
     recommendations = snapshot.merge(
-        regression, on=['player_id', 'snapshot_date'], how='left', suffixes=('', '_reg')
+        regression, on=['player_id', 'snapshot_date'], how='inner', suffixes=('', '_reg')
     ).merge(
-        classification, on=['player_id', 'snapshot_date'], how='left', suffixes=('', '_clf')
+        classification, on=['player_id', 'snapshot_date'], how='inner', suffixes=('', '_clf')
     ).merge(
-        development, on='player_id', how='left', suffixes=('', '_dev')
+        development, on='player_id', how='inner', suffixes=('', '_dev')
     ).merge(
-        players, on='player_id', how='left'
+        players, on='player_id', how='inner'
     )
     
     print(f"✓ Initial merge complete: {len(recommendations)} records")
