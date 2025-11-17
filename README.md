@@ -335,22 +335,24 @@ hackathon-fresh/
 - Transfer history and market dynamics
 
 **Performance**:
-- R² Score: 0.86
-- RMSE: €2.3M
-- MAE: €1.5M
+- RMSE: 0.2891
+- MAE: 0.1947
 
 ### LightGBM Classification (Breakout Prediction)
 
-**Purpose**: Identify players likely to "break out" (significant value increase)
+**Purpose**: Identify players likely to “break out” — players showing strong trajectory signals that indicate significant future improvement.
 
 **Definition of Breakout**:
-- Market value increases by >100% within 2 years, OR
-- Transfers to top-tier club with >200% value increase
+- Compute a position-weighted performance score
+- Apply a position-specific age curve
+- Measure year-over-year improvement
+- Within each position group × season, label only the top 20% in Δscore as breakout players
+
 
 **Performance**:
-- AUC-ROC: 0.91
-- Precision: 0.84
-- Recall: 0.78
+- AUC-ROC: 0.90
+- Precision: 0.62
+- Recall: 0.63
 
 ### Feature Engineering Highlights
 
@@ -377,17 +379,6 @@ hackathon-fresh/
 
 ### Data Dictionary
 [Full data dictionary available here](https://docs.google.com/document/d/1AvAvjpTnqF_sav1Zg5wq36RS-8uyjyCQRlzwSHX57Vs/edit?usp=drive_link)
-
----
-
-## 🤝 Contributors
-
-This project was developed for the **2025 MLDS Hackathon** by:
-
-- **Team Member 1** - ML Models & Feature Engineering
-- **Team Member 2** - Dashboard & Frontend
-- **Team Member 3** - Data Processing & LLM Integration
-- **Team Member 4** - Docker & DevOps
 
 ---
 
