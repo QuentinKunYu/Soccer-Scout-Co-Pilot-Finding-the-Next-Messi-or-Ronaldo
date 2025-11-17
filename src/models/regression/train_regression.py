@@ -1,32 +1,57 @@
+"""
+XGBoost Regression Model for Player Market Value Growth Prediction
+
+This module trains an XGBoost regression model to predict player market value growth
+(y_growth) based on player snapshots. It includes:
+- Feature engineering from player snapshot data
+- Time-based train/validation/test splitting
+- Rolling validation for model evaluation
+- SHAP value computation for model interpretability
+- Prediction generation for target year snapshots
+
+The model predicts 1-year market value growth and saves predictions along with
+SHAP feature importance values for downstream analysis.
+"""
+
 import os
 import json
 import numpy as np
 import pandas as pd
 
 from xgboost import XGBRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from joblib import dump
 import shap
 
 
-# ----------------- 路徑設定 -----------------
+# ----------------- Path Configuration -----------------
 
 PLAYER_SNAPSHOT_PATH = "data/processed/player_snapshot.parquet"
 REG_OUTPUT_PATH = "data/processed/regression_outputs.parquet"
-REG_PREDICTIONS_CSV = "data/processed/player_predictions.csv"  # New: CSV output for predictions
+REG_PREDICTIONS_CSV = "data/processed/player_predictions.csv"  # CSV output for predictions
 REG_METRICS_PATH = "data/processed/regression_metrics.json"
 MODEL_DIR = "models"
 MODEL_PATH = os.path.join(MODEL_DIR, "xgb_regressor.joblib")
 FEATURES_PATH = os.path.join(MODEL_DIR, "xgb_features.json")
-# ----------------- 設定 -----------------
-FINAL_TRAIN_END_YEAR = 2024      # 最終模型訓練到哪一年
-TARGET_YEAR_FOR_PRED = 2024      # 用哪一年 snapshot 來預測下一年 (→ 2025)
+
+# ----------------- Model Configuration -----------------
+FINAL_TRAIN_END_YEAR = 2024      # Final year to include in training data
+TARGET_YEAR_FOR_PRED = 2024      # Year of snapshots to use for prediction (predicts → 2025)
 
 
 
-# ----------------- 資料讀取 & feature 構建 -----------------
+# ----------------- Data Loading & Feature Engineering -----------------
 
 def load_player_snapshot(path: str = PLAYER_SNAPSHOT_PATH) -> pd.DataFrame:
+    """
+    Load player snapshot data from parquet file.
+    
+    Args:
+        path: Path to the player snapshot parquet file
+        
+    Returns:
+        DataFrame with player snapshot data, with snapshot_date converted to datetime
+    """
     df = pd.read_parquet(path)
     if not np.issubdtype(df["snapshot_date"].dtype, np.datetime64):
         df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")
@@ -35,13 +60,25 @@ def load_player_snapshot(path: str = PLAYER_SNAPSHOT_PATH) -> pd.DataFrame:
 
 def build_feature_matrix(df: pd.DataFrame):
     """
-    從 player_snapshot 建 feature matrix & target。
-      - target: y_growth
-      - 返回 X_df, y, data (與 X_df / y 對齊的原表)
+    Build feature matrix and target vector from player snapshot data.
+    
+    Constructs features from:
+    - Numerical features: age, height, market value, performance metrics, etc.
+    - Binary flags: league indicators, transfer flags, etc.
+    - Categorical features: position, foot, country, club, league (one-hot encoded)
+    
+    Args:
+        df: DataFrame containing player snapshot data
+        
+    Returns:
+        Tuple of (X_df, y, data) where:
+        - X_df: Feature matrix (DataFrame) with all engineered features
+        - y: Target vector (numpy array) containing y_growth values
+        - data: Original DataFrame aligned with X_df and y (rows with missing y_growth removed)
     """
     target_col = "y_growth"
 
-    # 數值特徵
+    # Numerical features
     num_cols = [
         "age",
         "height_in_cm",
@@ -63,7 +100,7 @@ def build_feature_matrix(df: pd.DataFrame):
         "league_strength",
     ]
 
-    # 二元 flags
+    # Binary flags
     bin_cols = [
         "league_is_major",
         "is_top5_league",
@@ -71,7 +108,7 @@ def build_feature_matrix(df: pd.DataFrame):
         "moved_to_bigger_club_flag",
     ]
 
-    # 類別特徵（one-hot）
+    # Categorical features (will be one-hot encoded)
     cat_cols = [
         "position",
         "sub_position",
@@ -82,17 +119,17 @@ def build_feature_matrix(df: pd.DataFrame):
         "league_country",
     ]
 
-    # 只保留有 label 的 rows
+    # Keep only rows with valid target labels
     data = df.dropna(subset=[target_col]).copy()
 
     if not np.issubdtype(data["snapshot_date"].dtype, np.datetime64):
         data["snapshot_date"] = pd.to_datetime(data["snapshot_date"], errors="coerce")
 
-    # numeric / binary
+    # Extract numerical and binary features
     X_num = data[[c for c in num_cols if c in data.columns]].copy()
     X_bin = data[[c for c in bin_cols if c in data.columns]].copy()
 
-    # categorical -> one-hot
+    # One-hot encode categorical features
     cat_present = [c for c in cat_cols if c in data.columns]
     if cat_present:
         X_cat = pd.get_dummies(
@@ -103,7 +140,7 @@ def build_feature_matrix(df: pd.DataFrame):
     else:
         X_cat = pd.DataFrame(index=data.index)
 
-    # 合併
+    # Concatenate all feature types
     X_df = pd.concat([X_num, X_bin, X_cat], axis=1)
     y = data[target_col].values
 
@@ -111,7 +148,7 @@ def build_feature_matrix(df: pd.DataFrame):
     return X_df, y, data
 
 
-# ----------------- 時間切分 & Rolling Validation -----------------
+# ----------------- Time-based Splitting & Rolling Validation -----------------
 
 def split_by_time(
     data: pd.DataFrame,
@@ -123,10 +160,26 @@ def split_by_time(
     test_start_year: int = 2023,
 ):
     """
-    最終模型用的 train/valid/test 切法：
-      - train: <= train_end_year
-      - valid: valid_start_year ~ valid_end_year
-      - test : >= test_start_year
+    Split data into train/validation/test sets based on snapshot year.
+    
+    This function implements time-based splitting for the final model evaluation:
+    - Training set: all snapshots with year <= train_end_year
+    - Validation set: snapshots with year between valid_start_year and valid_end_year (inclusive)
+    - Test set: all snapshots with year >= test_start_year
+    
+    Args:
+        data: DataFrame with snapshot_date column
+        X_df: Feature matrix aligned with data
+        y: Target vector aligned with data
+        train_end_year: Last year to include in training set
+        valid_start_year: First year to include in validation set
+        valid_end_year: Last year to include in validation set
+        test_start_year: First year to include in test set
+        
+    Returns:
+        Tuple of ((X_train, y_train), (X_valid, y_valid), (X_test, y_test), masks) where:
+        - Each (X, y) pair is the feature matrix and target for that split
+        - masks is a dict with boolean masks for each split
     """
     years = data["snapshot_date"].dt.year
 
@@ -154,8 +207,21 @@ def split_by_time(
 
 def rolling_validation_scores(X_df, y, data, model_params, val_years):
     """
-    滾動式驗證：
-      Fold k: Train < val_year_k, Validate == val_year_k
+    Perform rolling validation across multiple years.
+    
+    For each validation year, trains a model on all data before that year
+    and evaluates on data from that year. This provides a time-series aware
+    cross-validation approach.
+    
+    Args:
+        X_df: Feature matrix
+        y: Target vector
+        data: DataFrame with snapshot_date column
+        model_params: Dictionary of XGBoost hyperparameters
+        val_years: List of years to use as validation folds
+        
+    Returns:
+        List of dictionaries, each containing metrics (rmse, mae) for one fold
     """
     years = data["snapshot_date"].dt.year
     results = []
@@ -177,10 +243,9 @@ def rolling_validation_scores(X_df, y, data, model_params, val_years):
         mse = mean_squared_error(y_valid, y_pred)
         rmse = float(np.sqrt(mse))
         mae = float(mean_absolute_error(y_valid, y_pred))
-        r2 = float(r2_score(y_valid, y_pred))
 
-        print(f"[Fold {val_year}] RMSE={rmse:.4f} MAE={mae:.4f} R2={r2:.4f}")
-        results.append({"year": val_year, "rmse": rmse, "mae": mae, "r2": r2})
+        print(f"[Fold {val_year}] RMSE={rmse:.4f} MAE={mae:.4f}")
+        results.append({"year": val_year, "rmse": rmse, "mae": mae})
 
     if results:
         rv_df = pd.DataFrame(results)
@@ -192,31 +257,60 @@ def rolling_validation_scores(X_df, y, data, model_params, val_years):
     return results
 
 
-# ----------------- 評估函數 -----------------
+# ----------------- Evaluation Functions -----------------
 
 def evaluate_regression(model, X, y, split_name: str):
+    """
+    Evaluate regression model performance on a dataset.
+    
+    Computes and prints RMSE and MAE for the given split.
+    
+    Args:
+        model: Trained regression model with predict() method
+        X: Feature matrix
+        y: True target values
+        split_name: Name of the data split (e.g., "train", "valid", "test")
+        
+    Returns:
+        Tuple of (rmse, mae, y_pred) where:
+        - rmse: Root Mean Squared Error
+        - mae: Mean Absolute Error
+        - y_pred: Predicted values
+    """
     y_pred = model.predict(X)
     mse = mean_squared_error(y, y_pred)
     rmse = float(np.sqrt(mse))
     mae = float(mean_absolute_error(y, y_pred))
-    r2 = float(r2_score(y, y_pred))
-    print(f"[{split_name}] RMSE={rmse:.4f}  MAE={mae:.4f}  R2={r2:.4f}")
-    return rmse, mae, r2, y_pred
+    print(f"[{split_name}] RMSE={rmse:.4f}  MAE={mae:.4f}")
+    return rmse, mae, y_pred
 
 
-# ----------------- 主流程 -----------------
+# ----------------- Main Training Pipeline -----------------
 
 def main():
-    # 1) 讀取 snapshot
+    """
+    Main training pipeline for XGBoost regression model.
+    
+    This function:
+    1. Loads player snapshot data
+    2. Builds feature matrix and target vector
+    3. Performs rolling validation for model evaluation
+    4. Trains evaluation model on train/valid/test splits
+    5. Trains final model on all data up to FINAL_TRAIN_END_YEAR
+    6. Generates predictions for TARGET_YEAR_FOR_PRED snapshots
+    7. Computes SHAP values for model interpretability
+    8. Saves predictions, metrics, and model artifacts
+    """
+    #  Load player snapshot data
     df = load_player_snapshot()
 
-    # 2) feature matrix + target
+    # Build feature matrix and target vector
     X_df, y, data = build_feature_matrix(df)
     years = data["snapshot_date"].dt.year
     unique_years = sorted(years.unique())
     print(f"[main] years in data: {unique_years[:5]} ... {unique_years[-5:]}")
 
-    # 3) XGBoost 參數（之後可以微調）
+    # XGBoost hyperparameters (can be tuned further)
     model_params = dict(
         n_estimators=800,
         learning_rate=0.05,
@@ -230,7 +324,7 @@ def main():
         n_jobs=-1,
     )
 
-    # 4) Rolling validation：例如 2019–2023（跟原本一樣）
+    # Perform rolling validation (e.g., 2019-2023)
     candidate_val_years = [2019, 2020, 2021, 2022, 2023]
     val_years = [yy for yy in candidate_val_years if yy in unique_years]
 
@@ -240,7 +334,7 @@ def main():
     else:
         print("[main] No overlapping years for rolling validation, skip.")
 
-    # 5) train / valid / test 切分（用來算 metrics）
+    # Split data into train/valid/test sets (for computing evaluation metrics)
     (X_train, y_train), (X_valid, y_valid), (X_test, y_test), masks = split_by_time(
         data,
         X_df,
@@ -251,7 +345,7 @@ def main():
         test_start_year=2023,
     )
 
-    # 6) 評估用模型（只訓練到 2020）
+    # Train evaluation model (trained only up to 2020 for fair evaluation)
     model_eval = XGBRegressor(**model_params)
     model_eval.fit(
         X_train,
@@ -260,14 +354,14 @@ def main():
         verbose=True,
     )
 
-    # 7) train / valid / test 評估（寫進 metrics.json）
-    _, _, _, _ = evaluate_regression(model_eval, X_train, y_train, "train")
-    _, _, _, _ = evaluate_regression(model_eval, X_valid, y_valid, "valid")
-    rmse_test, mae_test, r2_test, _ = evaluate_regression(
+    # Evaluate on train/valid/test splits (save metrics to JSON)
+    _, _, _ = evaluate_regression(model_eval, X_train, y_train, "train")
+    _, _, _ = evaluate_regression(model_eval, X_valid, y_valid, "valid")
+    rmse_test, mae_test, _ = evaluate_regression(
         model_eval, X_test, y_test, "test"
     )
 
-    # 8) 最終模型：用 <= 2024 的所有資料訓練，專門拿來預測 2025
+    # Train final model: use all data <= 2024 to predict 2025
     final_train_mask = years <= FINAL_TRAIN_END_YEAR
     X_train_final = X_df[final_train_mask]
     y_train_final = y[final_train_mask]
@@ -277,7 +371,7 @@ def main():
     model = XGBRegressor(**model_params)
     model.fit(X_train_final, y_train_final)
 
-    # 9) 先對所有 row 做預測（方便 debug / 另存整體結果）
+    # Generate predictions for all rows (useful for debugging and overall results)
     y_pred_all = model.predict(X_df)
     data_out = data.copy()
     data_out["y_growth_pred"] = y_pred_all
@@ -285,17 +379,17 @@ def main():
         data_out["y_growth_pred"]
     )
 
-    # 10) 只保留 TARGET_YEAR_FOR_PRED (2024) 的 snapshot → 2024→2025 預測
+    # Filter to TARGET_YEAR_FOR_PRED (2024) snapshots → predict 2024→2025 growth
     print(f"\n[train_regression] Filtering to snapshots in {TARGET_YEAR_FOR_PRED}...")
     target_mask = years == TARGET_YEAR_FOR_PRED
     data_target = data_out[target_mask].copy()
     print(f"[train_regression] Filtered to {len(data_target)} rows in {TARGET_YEAR_FOR_PRED}")
 
-    # 對應的 X 也要用同樣 index
+    # Use corresponding X with same index
     X_target = X_df.loc[data_target.index].copy()
-    X_target = X_target[X_df.columns]  # 保證欄位順序一致
+    X_target = X_target[X_df.columns]  # Ensure column order consistency
 
-    # 11) 計算 SHAP（只對 2024 snapshots）
+    # Compute SHAP values (only for target year snapshots)
     print("[train_regression] Computing SHAP values for target year snapshots...")
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X_target)
@@ -316,7 +410,7 @@ def main():
     data_target = data_target.reset_index(drop=True)
     data_target["reg_shap_top_features"] = top_features_json
 
-    # 12) 組成輸出表：一列 = 一個球員 2024 snapshot 的 1-year 預測
+    # Build output table: one row = one player's 2024 snapshot 1-year prediction
     output_cols = [
         "player_id",
         "snapshot_date",
@@ -326,14 +420,14 @@ def main():
     ]
     regression_outputs = data_target[output_cols].copy()
 
-    # 確保 snapshot_date 是日期
+    # Ensure snapshot_date is datetime type
     if not pd.api.types.is_datetime64_any_dtype(regression_outputs["snapshot_date"]):
         regression_outputs["snapshot_date"] = pd.to_datetime(regression_outputs["snapshot_date"])
 
-    # 排序
+    # Sort by player_id
     regression_outputs = regression_outputs.sort_values("player_id")
 
-    # 13) 存 parquet + csv（給隊友）
+    # Save parquet and CSV files (for team use)
     os.makedirs(os.path.dirname(REG_OUTPUT_PATH), exist_ok=True)
     regression_outputs.to_parquet(REG_OUTPUT_PATH, index=False)
     print(f"[train_regression] Saved regression_outputs -> {REG_OUTPUT_PATH}")
@@ -344,18 +438,17 @@ def main():
     print(f"[train_regression] Output shape: {regression_outputs.shape}")
     print(f"[train_regression] Columns: {list(regression_outputs.columns)}")
 
-    # 14) 存 metrics（用 eval 模型）
+    # Save evaluation metrics (from eval model)
     metrics = {
         "rmse_test": rmse_test,
         "mae_test": mae_test,
-        "r2_test": r2_test,
     }
     os.makedirs(os.path.dirname(REG_METRICS_PATH), exist_ok=True)
     with open(REG_METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2)
     print(f"[train_regression] Saved regression_metrics -> {REG_METRICS_PATH}")
 
-    # 15) 存最終模型 + feature 名（for SHAP / 之後再用）
+    # Save final model and feature names (for SHAP and future use)
     os.makedirs(MODEL_DIR, exist_ok=True)
     dump(model, MODEL_PATH)
     print(f"[train_regression] Saved XGBoost model -> {MODEL_PATH}")
