@@ -129,7 +129,7 @@ Our system identifies players who:
 ### Step 1: Clone Repository
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/NuAiHackathon2025/hackathon-2025-evan-ston-energy.git
 cd hackathon-2025-evan-ston-energy
 ```
 
