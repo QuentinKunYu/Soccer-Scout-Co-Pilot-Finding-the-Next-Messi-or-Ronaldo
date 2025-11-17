@@ -1,4 +1,25 @@
+"""
+Generate final player recommendations by integrating all model outputs.
 
+This module combines outputs from multiple models and data sources to create
+a comprehensive player recommendation dataset for the frontend application.
+
+The function merges:
+- Player snapshot data (basic player information and performance metrics)
+- Regression model outputs (market value growth predictions)
+- Classification model outputs (breakout probability predictions)
+- Development curve analysis (aging curves and development tiers)
+- Player images and market value history
+
+Output:
+    - data/processed/player_recommendations.parquet
+    - data/processed/player_recommendations.csv
+    - app/mock_data/player_recommendations.csv (for frontend use)
+
+Usage:
+    from src.data_helper.generate_recommendations import generate_player_recommendations
+    recommendations = generate_player_recommendations()
+"""
 
 import pandas as pd
 import json
@@ -7,8 +28,41 @@ from pathlib import Path
 
 def generate_player_recommendations():
     """
-    Integrate all model outputs to generate the final player_recommendations.
-    Extract and calculate required features from various data sources.
+    Integrate all model outputs to generate the final player recommendations dataset.
+    
+    This function orchestrates the complete recommendation generation pipeline by:
+    1. Loading player snapshot data (basic player information and performance metrics)
+    2. Loading regression model outputs (market value growth predictions)
+    3. Loading classification model outputs (breakout probability predictions)
+    4. Loading development curve analysis (aging curves and development tiers)
+    5. Merging all datasets together
+    6. Calculating derived features (undervalued_score, mv_momentum_12m)
+    7. Generating market value history from historical data
+    8. Selecting and renaming columns for frontend compatibility
+    9. Saving outputs to multiple locations (processed data and frontend mock data)
+    
+    The function includes fallback logic to create mock data if any input files
+    are missing, making it robust for development and testing scenarios.
+    
+    Returns
+    -------
+    pd.DataFrame
+        Complete player recommendations dataset with all features required by
+        the frontend application. Includes:
+        - Basic player info (name, age, position, club, league)
+        - Market value predictions (current, predicted, growth rate)
+        - Breakout probability and undervalued score
+        - Performance statistics (goals, assists, minutes per 90)
+        - SHAP feature importance (regression and classification)
+        - Market value history (JSON format)
+        - Development curve metrics (aging score, development tier)
+        - Player image URL
+        
+    Examples
+    --------
+    >>> recommendations = generate_player_recommendations()
+    >>> print(f"Generated {len(recommendations)} player recommendations")
+    >>> print(recommendations.columns.tolist())
     """
     # Determine correct data paths
     # Dynamically adjust path based on current script location

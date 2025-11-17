@@ -1,4 +1,17 @@
-"""Prompt builders dedicated to the scouting assistant workflow."""
+"""
+Prompt builders for the AI scouting assistant workflow.
+
+This module contains prompt templates and formatting functions for generating
+comprehensive player scouting reports using large language models.
+
+The module provides:
+- Base system prompt defining the AI's role and expertise
+- Player-specific prompt builder that formats player data for analysis
+- Report rendering function that converts structured responses to markdown
+
+The prompts are designed to guide the LLM to provide actionable, quantitative
+analysis that connects statistical metrics to investment decisions.
+"""
 
 from __future__ import annotations
 

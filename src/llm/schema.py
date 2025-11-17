@@ -1,4 +1,18 @@
-"""Typed containers that keep the prompt payload consistent."""
+"""
+Data schema and containers for LLM prompt generation.
+
+This module defines typed data structures (dataclasses) that ensure consistency
+between the player recommendation data and the LLM prompt payload format.
+
+The module provides:
+- FeatureImportance: Container for SHAP feature importance values
+- KeyStats: Normalized statistics block for player performance metrics
+- PlayerLLMInput: Complete player data structure for LLM analysis
+- DevelopmentSnapshot: Aging curve and development metrics
+
+These containers handle data validation, type conversion, and serialization
+for safe transmission to the LLM API.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,20 @@
-"""Simple wrapper that either calls a real LLM or emits a deterministic stub."""
+"""
+LLM Client for generating AI-powered player scouting reports.
+
+This module provides a client interface for generating comprehensive scouting reports
+using large language models (LLMs). The client supports both real API calls (OpenAI)
+and fallback stub responses for development/testing scenarios.
+
+The client generates structured reports covering:
+- Player development trajectory and aging curve analysis
+- Market value inefficiency assessment
+- Breakout probability drivers
+- Risk factors and investment considerations
+- Actionable recommendations
+
+The module handles API compatibility issues gracefully, falling back to stub responses
+when API keys are missing or API calls fail.
+"""
 
 from __future__ import annotations
 

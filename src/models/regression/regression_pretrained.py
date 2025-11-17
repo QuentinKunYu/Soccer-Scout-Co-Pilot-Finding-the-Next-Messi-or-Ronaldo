@@ -1,20 +1,36 @@
 """
-Use pretrained XGBoost regression model to generate player market value growth
-predictions (no retraining).
+Pretrained XGBoost Regression Model for Market Value Growth Prediction
 
-Usage (for non-technical users):
+This module provides inference functionality for a pretrained XGBoost regression model
+that predicts player market value growth (y_growth) over a one-year horizon.
 
-    python run_regression_pretrained.py
+The model predicts:
+    - y_growth: Logarithmic growth rate of market value (log(MV_t+1) - log(MV_t))
+    - mv_pred_1y: Predicted market value one year in the future
+    - reg_shap_top_features: Top 5 most important features for each prediction (SHAP values)
 
-This will:
-- Load the latest player_snapshot.parquet
-- Load pretrained model + feature list
-- Recreate feature matrix
-- Predict y_growth and 1y-ahead market value
-- Compute per-player SHAP top features
-- Save outputs to:
-    data/processed/regression_outputs.parquet
-    data/processed/player_predictions.csv
+The model uses the same feature engineering pipeline as the training script to ensure
+consistency between training and inference.
+
+Input:
+    - data/processed/player_snapshot.parquet: Player snapshot dataset
+    - models/xgb_regressor.joblib: Pretrained XGBoost model
+    - models/xgb_features.json: List of feature names used during training
+
+Output:
+    - data/processed/regression_outputs.parquet: Predictions with SHAP features
+    - data/processed/player_predictions.csv: CSV version of predictions
+
+Usage:
+    python -m src.models.regression.regression_pretrained
+    
+    Or import and use programmatically:
+    from src.models.regression.regression_pretrained import run_pretrained
+    run_pretrained(
+        snapshot_path="data/processed/player_snapshot.parquet",
+        model_path="models/xgb_regressor.joblib",
+        features_path="models/xgb_features.json"
+    )
 """
 
 import os
