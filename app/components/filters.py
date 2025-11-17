@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 import pandas as pd
+import numpy as np
 import streamlit as st
 
 
@@ -58,17 +59,21 @@ def render_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, FilterState]:
         
         # League filter
         st.markdown("### Basic Criteria")
+        # 過濾掉 NaN 值並轉換為字串列表
+        leagues = sorted([str(league) for league in df["league_name"].dropna().unique()])
         league = st.selectbox(
             "League",
-            options=["All"] + sorted(df["league_name"].unique()),
+            options=["All"] + leagues,
             index=0,
             help="Select a specific league or view all leagues"
         )
         
         # Sub-position filter
+        # 過濾掉 NaN 值並轉換為字串列表
+        positions = sorted([str(pos) for pos in df["sub_position"].dropna().unique()])
         sub_position = st.selectbox(
             "Position",
-            options=["All"] + sorted(df["sub_position"].unique()),
+            options=["All"] + positions,
             index=0,
             help="Select player sub-position (Attacker, Midfielder, Defender, Goalkeeper)"
         )

@@ -37,11 +37,15 @@ def _format_for_display(df: pd.DataFrame) -> pd.DataFrame:
     Format numeric fields to make the table more readable.
     
     Conversions:
+    - Age: Convert to integer
     - Market value fields: Convert from raw values to millions of euros (divide by 1,000,000)
     - Percentage fields: Convert from decimals (0.5) to percentages (50.0)
     - Score fields: Round to two decimal places
     """
     formatted = df.copy()
+    
+    # Convert age to integer
+    formatted["age"] = formatted["age"].astype(int)
     
     # Convert market value fields to millions of euros
     formatted["current_market_value"] = (formatted["current_market_value"] / 1_000_000).round(2)

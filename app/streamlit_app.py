@@ -12,6 +12,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import streamlit as st
+import base64
 
 from src.llm.llm_client import LLMClient
 from src.llm.prompts import render_report_to_markdown
@@ -23,7 +24,9 @@ from app.components.player_detail import render_player_detail
 from app.components.player_table import render_player_table
 
 # DATA_PATH: Path to the CSV file containing player recommendations
-DATA_PATH = Path("app/mock_data/mock_player_recommendations.csv")
+DATA_PATH = Path("data/processed/player_recommendations.csv")
+# LOGO_PATH: Path to the Chicago Fire logo
+LOGO_PATH = ROOT_DIR / "src" / "photo" / "Chicago-Fire-logo.png"
 
 
 @st.cache_data(show_spinner=False)
@@ -33,8 +36,34 @@ def load_data(path: Path):
     
     Uses @st.cache_data decorator to cache results, improving UI responsiveness.
     show_spinner=False: Disables loading animation since data is cached and loads quickly.
+    
+    Additionally converts age to integer format.
     """
-    return load_player_recommendations(path)
+    df = load_player_recommendations(path)
+    # 確保 age 欄位是整數
+    if "age" in df.columns:
+        df["age"] = df["age"].astype(int)
+    return df
+
+
+def get_base64_image(image_path: Path) -> str:
+    """
+    Convert image file to base64 string for embedding in HTML.
+    
+    This function reads an image file and converts it to a base64-encoded string,
+    which can be embedded directly in HTML img tags using data URI scheme.
+    
+    Args:
+        image_path: Path to the image file
+        
+    Returns:
+        Base64-encoded string of the image, or empty string if file not found
+    """
+    try:
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    except FileNotFoundError:
+        return ""
 
 
 def _render_custom_css():
@@ -237,22 +266,51 @@ def main() -> None:
     7. Display detailed information for selected player
     8. Provide AI analysis report functionality
     """
-    # set_page_config: Set page title to "Scout Co-Pilot" and use wide layout to display more information
-    st.set_page_config(page_title="Scout Co-Pilot", layout="wide")
+    # set_page_config: Set page title to "Scout Co-Pilot" and use centered layout for better focus
+    st.set_page_config(page_title="Scout Co-Pilot", layout="centered")
     
     # Inject custom CSS styles
     _render_custom_css()
     
-    # Display application title
-    st.title("Smart Scouting Co-Pilot")
-    st.markdown(
-        """
-        <p style='font-size: 1.15rem; color: #d1d5db; margin-bottom: 2rem;'>
-        Filter undervalued prospects and get deep insights with AI
-        </p>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Display application title with Chicago Fire logo before the text
+    # Get base64-encoded logo image for embedding in HTML
+    logo_base64 = get_base64_image(LOGO_PATH)
+    
+    if logo_base64:
+        # If logo is successfully loaded, display icon on the far left, with title and subtitle stacked and vertically centered on the right
+        st.markdown(
+            f"""
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <img src="data:image/png;base64,{logo_base64}" alt="Chicago Fire Logo" width="100" style="flex-shrink: 0;" />
+                <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                    <span style="font-size: 2.125rem; font-weight: 700; color: inherit; line-height: 1; display: block;">
+                        Finding Next Messi .... or Ronaldo
+                    </span>
+                    <span style='font-size: 1.15rem; color: #d1d5db; margin-bottom: 0; display: block;'>
+                        Filter undervalued prospects and get deep insights with AI
+                    </span>
+                </div>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+    else:
+        # If logo fails to load, display just the text portion
+        st.markdown(
+            """
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                    <span style="font-size: 2.125rem; font-weight: 700; color: inherit; line-height: 1; display: block;">
+                        Finding Next Messi .... or Ronaldo
+                    </span>
+                    <span style='font-size: 1.15rem; color: #d1d5db; margin-bottom: 0; display: block;'>
+                        Filter undervalued prospects and get deep insights with AI
+                    </span>
+                </div>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
 
     # Load player data (uses cache, only loads on first execution)
     df = load_data(DATA_PATH)

@@ -283,41 +283,33 @@ clf_shap_top_features       (string, JSON-encoded)
 欄位示例（這是你前端/LLM 主要依賴的 schema，超重要 ❗️）：
 
 ```
-player_id
-snapshot_date
-player_name
-age
-position
-club_name
-league_name
+# 基本資訊
+player_id, snapshot_date, player_name, age, position, sub_position
+club_name, league_name
 
-current_market_value        (float)
-mv_pred_1y                  (float)
-y_growth_pred               (float)
-breakout_prob               (float)
+# 市場價值
+current_market_value, mv_pred_1y, y_growth_pred
 
-# Derived
-undervalued_score           (float)  # mv_pred_1y - current_market_value
-is_young                    (int 0/1)
+# 機器學習預測
+breakout_prob, undervalued_score
 
-# 會顯示在前端的核心 features（也可以給 LLM）
-minutes_per_90
-goals_per_90
-assists_per_90
-delta_goals_per_90
-delta_minutes_per_90
-rating_mean
-mv_momentum_12m
-club_total_value
-league_strength
+# 表現數據
+minutes_per_90, goals_per_90, assists_per_90
+delta_goals_per_90, delta_minutes_per_90
+rating_mean, mv_momentum_12m
 
-# SHAP explanations
-reg_shap_top_features       (string JSON)
-clf_shap_top_features       (string JSON)
+# 發展曲線數據（Development）
+expected_value_million, expected_ga_per_90, expected_minutes_per_90
+valuation_above_curve, performance_above_curve, minutes_above_curve
+aging_score, development_tier
+peak_age, years_since_peak_value, valuation_slope_24m
 
-# For ranking
-rank_undervalued_overall    (int)
-rank_breakout_young         (int)
+# 可解釋性
+reg_shap_top_features, clf_shap_top_features
+
+# 其他
+mv_history (JSON格式的歷史市值)
+img_url (球員照片URL)
 
 ```
 

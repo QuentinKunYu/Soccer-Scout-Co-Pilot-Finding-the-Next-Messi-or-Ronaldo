@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List, Sequence
 
 import altair as alt
@@ -14,6 +15,155 @@ from src.llm.schema import FeatureImportance
 ACTUAL_COLOR = "#f87171"      # light red for actual metrics
 BENCHMARK_COLOR = "#dc2626"   # deeper red for curve benchmarks
 PREDICTED_COLOR = "#fecaca"   # pale red for Chart Legend:
+
+# Path to aging curve data
+AGING_CURVE_DATA_PATH = Path(__file__).parent.parent.parent / "data" / "processed" / "development_outputs.parquet"
+
+
+@st.cache_data(show_spinner=False)
+def _load_aging_curves():
+    """
+    Load aging curve data from parquet file.
+    
+    Returns a DataFrame with aging curves for all positions, including:
+    - expected_value_million: Market value curve
+    - expected_ga_per_90: Goals+Assists performance curve  
+    - expected_minutes_per_90: Playing time curve
+    """
+    if not AGING_CURVE_DATA_PATH.exists():
+        return None
+    
+    df = pd.read_parquet(AGING_CURVE_DATA_PATH)
+    
+    # Group by position and age to get the aging curves
+    # Take the mean of expected values for each position-age combination
+    curves = df.groupby(["sub_position", "age"]).agg({
+        "expected_value_million": "mean",
+        "expected_ga_per_90": "mean",
+        "expected_minutes_per_90": "mean"
+    }).reset_index()
+    
+    return curves
+
+
+def _plot_aging_curves(player_position: str, player_age: float, player_row: pd.Series) -> alt.Chart:
+    """
+    Plot aging curves for the player's position across three metrics.
+    
+    Args:
+        player_position: Player's sub_position (e.g., "Centre-Forward")
+        player_age: Player's current age
+        player_row: Full player data row for plotting actual values
+        
+    Returns:
+        Altair chart with three subplots showing aging curves
+    """
+    # Load aging curve data
+    curves_df = _load_aging_curves()
+    
+    if curves_df is None:
+        # Return empty chart with message if data not available
+        return alt.Chart(pd.DataFrame({"message": ["Aging curve data not available"]})).mark_text(
+            text="Aging curve data not available", size=14, color="#9ca3af"
+        ).properties(height=300)
+    
+    # Filter for player's position only
+    position_curves = curves_df[curves_df["sub_position"] == player_position].copy()
+    
+    if position_curves.empty:
+        return alt.Chart(pd.DataFrame({"message": [f"No aging curve data for {player_position}"]})).mark_text(
+            text=f"No aging curve data for {player_position}", size=14, color="#9ca3af"
+        ).properties(height=300)
+    
+    # Calculate player's actual values (excluding market value)
+    # Use ga_per_90 from development_outputs if available (calculated as total G+A / total minutes * 90)
+    # Otherwise fall back to summing individual per-90 stats
+    if "ga_per_90" in player_row.index and pd.notna(player_row.ga_per_90):
+        player_ga = player_row.ga_per_90
+    else:
+        player_ga = (player_row.get("goals_per_90", 0) or 0) + (player_row.get("assists_per_90", 0) or 0)
+    
+    # Use minutes_per_90 from development_outputs if available
+    if "minutes_per_90" in player_row.index and pd.notna(player_row.minutes_per_90):
+        player_minutes = player_row.minutes_per_90
+    else:
+        player_minutes = player_row.get("minutes_per_90", 0) or 0
+    
+    # Create player actual value point (only for on-field metrics)
+    player_point = pd.DataFrame({
+        "age": [player_age, player_age],
+        "value": [player_ga, player_minutes],
+        "metric": ["Goals+Assists / 90min", "Playing Time (min / 90)"],
+        "label": ["Your Player", "Your Player"]
+    })
+    
+    # Prepare data for two curves (excluding market value)
+    ga_data = position_curves[["age", "expected_ga_per_90"]].copy()
+    ga_data["metric"] = "Goals+Assists / 90min"
+    ga_data.rename(columns={"expected_ga_per_90": "value"}, inplace=True)
+    
+    minutes_data = position_curves[["age", "expected_minutes_per_90"]].copy()
+    minutes_data["metric"] = "Playing Time (min / 90)"
+    minutes_data.rename(columns={"expected_minutes_per_90": "value"}, inplace=True)
+    
+    # Combine curve data and player points into one DataFrame (excluding market value)
+    all_curves = pd.concat([ga_data, minutes_data], ignore_index=True)
+    all_curves["type"] = "Curve Benchmark"
+    
+    player_point["type"] = "Your Player"
+    
+    # Combine curves and player points
+    combined_data = pd.concat([all_curves, player_point], ignore_index=True)
+    
+    # Create base chart with shared data
+    base = alt.Chart(combined_data).encode(
+        x=alt.X("age:Q", title="Age", scale=alt.Scale(domain=[16, 37])),
+        y=alt.Y("value:Q", title="Value")
+    )
+    
+    # Create line chart for curves
+    line = base.transform_filter(
+        alt.datum.type == "Curve Benchmark"
+    ).mark_line(
+        color=BENCHMARK_COLOR,
+        strokeWidth=3
+    ).encode(
+        tooltip=[
+            alt.Tooltip("age:Q", title="Age", format=".1f"),
+            alt.Tooltip("value:Q", title="Expected Value", format=".2f")
+        ]
+    )
+    
+    # Create point for player's actual value
+    point = base.transform_filter(
+        alt.datum.type == "Your Player"
+    ).mark_point(
+        shape="diamond",
+        size=200,
+        color=ACTUAL_COLOR,
+        filled=True
+    ).encode(
+        tooltip=[
+            alt.Tooltip("label:N", title="Type"),
+            alt.Tooltip("age:Q", title="Age", format=".1f"),
+            alt.Tooltip("value:Q", title="Actual Value", format=".2f")
+        ]
+    )
+    
+    # Layer the charts together and then facet
+    chart = (line + point).properties(
+        width=600,
+        height=200
+    ).facet(
+        row=alt.Row("metric:N", title=None, header=alt.Header(labelFontSize=13, labelFontWeight=600))
+    ).resolve_scale(
+        y="independent"
+    ).configure_axis(
+        labelFontSize=11,
+        titleFontSize=12
+    )
+    
+    return chart
 
 
 def _plot_mv_history(history: List[dict]) -> alt.Chart:
@@ -84,14 +234,26 @@ def render_player_detail(row: pd.Series) -> None:
     # Left column: Player photo
     with cols[0]:
         if "img_url" in row and row.img_url:
-            st.image(row.img_url, width=150)
+            st.markdown(
+                "<div style='padding-top: 24px;'></div>", 
+                unsafe_allow_html=True
+            )
+            # Add border radius to player image using HTML/CSS wrapper
+            st.markdown(
+                f"""
+                <div style="width: 150px; display: flex; align-items: center; justify-content: center;">
+                    <img src="{row.img_url}" width="150" style="border-radius: 16px; object-fit: cover;" />
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         else:
             # Fallback if no image is available
             st.markdown(
                 """
                 <div style="width: 150px; height: 150px; 
                             background-color: #f3f4f6; 
-                            border-radius: 50%; 
+                            border-radius: 16px; 
                             display: flex; 
                             align-items: center; 
                             justify-content: center;
@@ -102,35 +264,65 @@ def render_player_detail(row: pd.Series) -> None:
                 """,
                 unsafe_allow_html=True
             )
-    
+
     # Right column: Player name and position
     with cols[1]:
-        st.markdown(f"## {row.player_name}")
-        st.caption(f"{row.sub_position}")
-    
+        st.markdown(
+            f"""
+            <div style="display: flex; flex-direction: column; justify-content: center; height: 100%; margin-top: 64px;">
+                <span style="font-size: 2.125rem; font-weight: 700;">{row.player_name}</span>
+                <span style="font-size: 1.15rem; color: var(--text-secondary-color, #6b7280); margin-top: 0.25rem;">{row.sub_position}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     st.markdown("---")
     
     # Core metrics card section - using clear labels
     st.markdown("### Core Metrics")
-    cols = st.columns(4)
     
-    # metric: Streamlit's metric display component, automatically formats values and highlights them
-    cols[0].metric("Age", f"{row.age} years")
-    cols[1].metric(
-        "Current MV", 
-        f"€{row.current_market_value / 1_000_000:.2f}M",
-        help="Player's current market valuation (millions of euros)"
-    )
-    cols[2].metric(
-        "Pred MV (1 year)", 
-        f"€{row.mv_pred_1y / 1_000_000:.2f}M",
-        help="AI predicted market value in one year"
-    )
-    cols[3].metric(
-        "Expected Growth", 
-        f"{row.y_growth_pred * 100:.1f}%",
-        help="Predicted annual market value growth rate"
-    )
+    # Check if wide mode is enabled
+    if st.session_state.get("wide_mode", False):
+        # Wide mode: display all 4 metrics in one row
+        cols = st.columns(4)
+        cols[0].metric("Age", f"{int(row.age)}")
+        cols[1].metric(
+            "Current MV", 
+            f"€{row.current_market_value / 1_000_000:.2f}M",
+            help="Player's current market valuation (millions of euros)"
+        )
+        cols[2].metric(
+            "Pred MV (1 year)", 
+            f"€{row.mv_pred_1y / 1_000_000:.2f}M",
+            help="AI predicted market value in one year"
+        )
+        cols[3].metric(
+            "Expected Growth", 
+            f"{row.y_growth_pred * 100:.1f}%",
+            help="Predicted annual market value growth rate"
+        )
+    else:
+        # Normal mode: display 2 metrics per row (2 rows total)
+        cols_row1 = st.columns(2)
+        cols_row1[0].metric("Age", f"{int(row.age)}")
+        cols_row1[1].metric(
+            "Current MV", 
+            f"€{row.current_market_value / 1_000_000:.2f}M",
+            help="Player's current market valuation (millions of euros)"
+        )
+        
+        cols_row2 = st.columns(2)
+        cols_row2[0].metric(
+            "Pred MV (1 year)", 
+            f"€{row.mv_pred_1y / 1_000_000:.2f}M",
+            help="AI predicted market value in one year"
+        )
+        cols_row2[1].metric(
+            "Expected Growth", 
+            f"{row.y_growth_pred * 100:.1f}%",
+            help="Predicted annual market value growth rate"
+        )
 
     # Club and opportunity score section with clean info box
     st.markdown("### Investment Opportunity")
@@ -174,35 +366,86 @@ def render_player_detail(row: pd.Series) -> None:
     
     with st.expander("Performance Change Trends", expanded=True):
         trend_cols = st.columns(3)
-        trend_cols[0].metric(
-            "Goals Change",
-            f"{row.delta_goals_per_90:+.2f}",
-            help="Change in goals per 90 from previous period"
-        )
-        trend_cols[1].metric(
-            "Time Change",
-            f"{row.delta_minutes_per_90:+.1f} min",
-            help="Change in playing time from previous period"
-        )
-        trend_cols[2].metric(
-            "Avg Rating",
-            f"{row.rating_mean:.2f}",
-            help="Average match rating"
-        )
+        # 檢查欄位是否存在，如果不存在則顯示 N/A
+        try:
+            val = getattr(row, 'delta_goals_per_90', None)
+            if val is not None and not pd.isna(val):
+                trend_cols[0].metric(
+                    "Goals Change",
+                    f"{val:+.2f}",
+                    help="Change in goals per 90 from previous period"
+                )
+            else:
+                trend_cols[0].metric(
+                    "Goals Change",
+                    "N/A",
+                    help="Data not available"
+                )
+        except:
+            trend_cols[0].metric(
+                "Goals Change",
+                "N/A",
+                help="Data not available"
+            )
+        # 檢查欄位是否存在，如果不存在則顯示 N/A
+        try:
+            val = getattr(row, 'delta_minutes_per_90', None)
+            if val is not None and not pd.isna(val):
+                trend_cols[1].metric(
+                    "Time Change",
+                    f"{val:+.1f} min",
+                    help="Change in playing time from previous period"
+                )
+            else:
+                trend_cols[1].metric(
+                    "Time Change",
+                    "N/A",
+                    help="Data not available"
+                )
+        except:
+            trend_cols[1].metric(
+                "Time Change",
+                "N/A",
+                help="Data not available"
+            )
     
     with st.expander("Market Value Dynamics", expanded=True):
-        st.metric(
-            "12-Month Momentum",
-            f"{row.mv_momentum_12m:+.2f}",
-            help="Market value change trend over past 12 months"
-        )
+        # 檢查欄位是否存在，如果不存在則顯示 N/A
+        try:
+            val = getattr(row, 'mv_momentum_12m', None)
+            if val is not None and not pd.isna(val):
+                st.metric(
+                    "12-Month Momentum",
+                    f"{val:+.2f}",
+                    help="Market value change trend over past 12 months"
+                )
+            else:
+                st.metric(
+                    "12-Month Momentum",
+                    "N/A",
+                    help="Data not available"
+                )
+        except:
+            st.metric(
+                "12-Month Momentum",
+                "N/A",
+                help="Data not available"
+            )
 
     # Render development curve analysis (compared to aging curve)
     _render_development_section(row)
 
     # Market value history chart
     st.markdown("### Market Value History")
-    st.altair_chart(_plot_mv_history(row.mv_history), use_container_width=True)
+    # 檢查欄位是否存在，如果不存在則顯示訊息
+    try:
+        val = getattr(row, 'mv_history', None)
+        if val is not None and val != '' and str(val).strip() != '':
+            st.altair_chart(_plot_mv_history(val), use_container_width=True)
+        else:
+            st.info("Market value history data not available")
+    except:
+        st.info("Market value history data not available")
 
     # SHAP feature importance analysis
     st.markdown("### AI Feature Importance Analysis")
@@ -210,9 +453,25 @@ def render_player_detail(row: pd.Series) -> None:
     
     shap_cols = st.columns(2)
     with shap_cols[0]:
-        _render_feature_tags(row.reg_shap_top_features, "Market Value Key Factors")
+        # 檢查欄位是否存在，如果不存在則顯示訊息
+        try:
+            val = getattr(row, 'reg_shap_top_features', None)
+            if val is not None and val != '' and str(val).strip() != '':
+                _render_feature_tags(val, "Market Value Key Factors")
+            else:
+                st.info("Market value key factors not available")
+        except:
+            st.info("Market value key factors not available")
     with shap_cols[1]:
-        _render_feature_tags(row.clf_shap_top_features, "Breakout Probability Key Factors")
+        # 檢查欄位是否存在，如果不存在則顯示訊息
+        try:
+            val = getattr(row, 'clf_shap_top_features', None)
+            if val is not None and val != '' and str(val).strip() != '':
+                _render_feature_tags(val, "Breakout Probability Key Factors")
+            else:
+                st.info("Breakout probability key factors not available")
+        except:
+            st.info("Breakout probability key factors not available")
 
 
 def _render_development_section(row: pd.Series) -> None:
@@ -243,48 +502,81 @@ def _render_development_section(row: pd.Series) -> None:
     # Display development curve analysis title and description
     st.markdown("### Development Curve Analysis")
     st.caption("Compare player performance with standard curve for same age group to assess if exceeding expectations")
-    
-    # Display legend explanation
-    _render_development_legend()
-    
-    # Display comparison chart
-    _render_development_comparison_chart(row)
-
-    # Market value comparison metrics
-    st.markdown("#### Market Value Performance")
-    dev_cols = st.columns(3)
-    dev_cols[0].metric(
-        "Curve Expected MV", 
-        f"€{row.expected_value_million:.2f}M",
-        help="Average market value for similar players based on age and position"
-    )
-    dev_cols[1].metric(
-        "Above Curve", 
-        f"€{row.valuation_above_curve:+.2f}M",
-        help="Difference between actual and expected MV (positive values indicate exceeding expectations)"
-    )
-    dev_cols[2].metric(
+    # Insert Aging Score metric directly below caption
+    col1, col2 = st.columns(2)
+    col1.metric(
         "Aging Score", 
         f"{row.aging_score:+.2f}",
         help="Composite score, positive values indicate performance above age expectations"
     )
+
+    # Load aging curves data (this will be used by both the chart and comparison)
+    curves_df = _load_aging_curves()
+    
+    if curves_df is not None:
+        # Filter for player's position
+        position_curves = curves_df[curves_df["sub_position"] == row.sub_position].copy()
+        
+        # Get the expected values for player's age from the curve
+        # 確保使用整數年齡進行比較
+        player_age_int = int(row.age)
+        player_age_curve = position_curves[position_curves["age"] == player_age_int]
+        
+        if not player_age_curve.empty:
+            # Use values from aging curve (excluding market value)
+            expected_ga = player_age_curve["expected_ga_per_90"].iloc[0]
+            expected_minutes = player_age_curve["expected_minutes_per_90"].iloc[0]
+        else:
+            # Fallback to row values if age not found in curve
+            expected_ga = row.expected_ga_per_90
+            expected_minutes = row.expected_minutes_per_90
+    else:
+        # Fallback to row values if curves not available
+        expected_ga = row.expected_ga_per_90
+        expected_minutes = row.expected_minutes_per_90
+    
+    # Display aging curves for player's position
+    st.markdown("#### Position Aging Curves")
+    st.caption(f"Aging curves for {row.sub_position} position at age {int(row.age)}. The diamond marker shows this player's current performance.")
+    aging_chart = _plot_aging_curves(row.sub_position, int(row.age), row)
+    st.altair_chart(aging_chart, use_container_width=True)
+    
+    # Display legend explanation
+    _render_development_legend()
+    
+    # Display comparison chart - pass the expected values from aging curve (excluding market value)
+    _render_development_comparison_chart(row, expected_ga, expected_minutes)
 
     # On-field performance comparison metrics
     st.markdown("#### On-Field Performance")
     perf_cols = st.columns(3)
     perf_cols[0].metric(
         "Curve Expected G+A/90", 
-        f"{row.expected_ga_per_90:.2f}",
+        f"{expected_ga:.2f}",
         help="Expected goals+assists for same age players (per 90 minutes)"
     )
+    
+    # Calculate actual difference using curve-based expected value
+    if "ga_per_90" in row.index and pd.notna(row.ga_per_90):
+        actual_ga = row.ga_per_90
+    else:
+        actual_ga = (row.goals_per_90 or 0) + (row.assists_per_90 or 0)
+    ga_diff = actual_ga - expected_ga
+    
+    if "minutes_per_90" in row.index and pd.notna(row.minutes_per_90):
+        actual_minutes = row.minutes_per_90
+    else:
+        actual_minutes = row.get("minutes_per_90", 0) or 0
+    minutes_diff = actual_minutes - expected_minutes
+    
     perf_cols[1].metric(
         "G+A Above Curve", 
-        f"{row.performance_above_curve:+.2f}",
+        f"{ga_diff:+.2f}",
         help="Difference between actual and expected G+A"
     )
     perf_cols[2].metric(
         "Minutes Above Curve", 
-        f"{row.minutes_above_curve:+.1f} mins",
+        f"{minutes_diff:+.1f} mins",
         help="Difference between actual and expected playing time"
     )
 
@@ -298,11 +590,6 @@ def _render_development_section(row: pd.Series) -> None:
         <div class='info-box' style='margin-top: 1rem;'>
             <p style='margin: 0; font-size: 1rem;'>
                 <strong>Development Stage:</strong> {tier_label}
-                <strong style='margin-left: 2rem;'>Peak Age:</strong> {row.get('peak_age', 'N/A')} years
-            </p>
-            <p style='margin: 0.5rem 0 0 0; font-size: 1rem;'>
-                <strong>Years Since Peak:</strong> {years_since_peak:.1f} years
-                <strong style='margin-left: 2rem;'>24m Valuation Slope:</strong> <span style='color: {"#10b981" if valuation_slope >= 0 else "#ef4444"}; font-weight: 600;'>{valuation_slope:+.2f}</span>
             </p>
         </div>
         """,
@@ -350,38 +637,44 @@ def _render_development_legend() -> None:
     st.markdown(legend_html, unsafe_allow_html=True)
 
 
-def _render_development_comparison_chart(row: pd.Series) -> None:
+def _render_development_comparison_chart(
+    row: pd.Series,
+    expected_ga: float, 
+    expected_minutes: float
+) -> None:
     """
     Render bullet charts showing actual vs benchmark values comparison.
     
-    Creates three comparison charts:
-    1. Market value comparison (current vs expected vs predicted)
-    2. Goals+assists comparison (actual vs standard curve)
-    3. Playing time comparison (actual vs standard curve)
+    Creates two comparison charts:
+    1. Goals+assists comparison (actual vs standard curve)
+    2. Playing time comparison (actual vs standard curve)
+    
+    Args:
+        row: Player data row
+        expected_ga: Expected goals+assists per 90 from aging curve
+        expected_minutes: Expected minutes per 90 from aging curve
     """
-    # Calculate actual and expected values for each metric
-    actual_mv = row.current_market_value / 1_000_000  # Current market value (millions of euros)
-    pred_mv = row.mv_pred_1y / 1_000_000  # AI predicted market value in one year
-    benchmark_mv = row.expected_value_million  # Expected market value based on aging curve
     
-    ga_actual = (row.goals_per_90 or 0) + (row.assists_per_90 or 0)  # Actual G+A
-    ga_expected = row.expected_ga_per_90  # Expected G+A from standard curve
+    # Use ga_per_90 from development_outputs (calculated as total G+A / total minutes * 90)
+    # This matches the calculation method in player_development_analysis.ipynb
+    if "ga_per_90" in row.index and pd.notna(row.ga_per_90):
+        ga_actual = row.ga_per_90
+    else:
+        ga_actual = (row.goals_per_90 or 0) + (row.assists_per_90 or 0)
     
-    minutes_actual = row.minutes_per_90  # Actual playing time
-    minutes_expected = row.expected_minutes_per_90  # Expected playing time
+    # Use minutes_per_90 from development_outputs
+    # This represents total minutes / number of appearances
+    if "minutes_per_90" in row.index and pd.notna(row.minutes_per_90):
+        minutes_actual = row.minutes_per_90
+    else:
+        minutes_actual = row.get("minutes_per_90", 0) or 0
+    
+    # Use the expected values passed from the aging curve (NOT from row)
+    ga_expected = expected_ga
+    minutes_expected = expected_minutes
 
-    # Create three bullet charts with English labels
+    # Create two bullet charts with English labels (excluding market value)
     charts = [
-        _bullet_chart(
-            metric="Market Value (€M)",
-            actual=actual_mv,
-            benchmark=benchmark_mv,
-            predicted=pred_mv,
-            x_domain=(0, 200),
-            actual_label="Current MV",
-            benchmark_label="Curve Benchmark",
-            predicted_label="AI Predicted",
-        ),
         _bullet_chart(
             metric="Goals+Assists / 90min",
             actual=ga_actual,
@@ -400,7 +693,7 @@ def _render_development_comparison_chart(row: pd.Series) -> None:
         ),
     ]
     
-    # Vertically concatenate three charts and configure styling
+    # Vertically concatenate two charts and configure styling
     # vconcat: Vertically connect multiple charts
     # resolve_scale(x="independent"): Let each chart use independent X-axis range
     chart = alt.vconcat(*charts).resolve_scale(x="independent").configure_axis(

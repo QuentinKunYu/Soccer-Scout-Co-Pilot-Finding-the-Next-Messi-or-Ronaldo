@@ -396,3 +396,63 @@ plot_aging_curves.py
 * 給你 GAM / LOESS / spline 建 curve 的可直接用程式
 * 幫你寫 Aging Score 計算 function
 * 幫你做 Streamlit Aging Tab UI
+
+---
+
+# 📓 實作說明：`notebooks/player_development_analysis.ipynb`
+
+這份 notebook 已經把「位置 × 年齡」的估值與表現曲線跑過一遍，以下整理它的實作細節，之後要擴充或重跑就依此流程。
+
+## 🚚 資料與預處理
+
+- 來源：`players.csv`, `player_valuations.csv`, `appearances.csv`, `competitions.csv`, `games.csv`，由 `load_raw_data()` 一次載入並回報列數。
+- 共同欄位轉換：`date_of_birth`、各筆 `date` 轉為 `datetime`，再用 `compute_age()` 算浮點年齡。
+- 年齡取 0.25 年粒度：`age_exact * 4 → round → /4`，並限制在 16–40 歲，避免極端尾巴。
+- 出場資料新增 `minutes_per_appearance = minutes_played.clip(lower=1)`，避免除以零。
+
+## 📈 Aging Curve 方法
+
+### Valuation curve
+
+1. 轉換成百萬歐元 (`value_million`)，先排除 38 歲以上樣本。
+2. 只有當某 `sub_position` × `age` 至少 10 筆時才使用，確保曲線穩定。
+3. 透過 `agg_by_age_sub_position()` 取年齡中位數市場價值，並在各位置上套 3 點 rolling 平滑 (center=True) 讓曲線連續。
+
+### Performance 與 Playing-Time curve
+
+1. 先把 `appearances` 裁到 38 歲以下，再以位置+年齡聚合出總進球、助攻、分鐘以及出場場次（`sample_count`）。
+2. 只保留 `sample_count ≥ 20` 的年齡組，確保每個點是真實代表。
+3. 依位置計算 `ga_per_90 = (goals+assists)/minutes * 90`，和 `minutes_per_90 = total_minutes / sample_count`。
+4. 為了壓掉異常值，對 `ga_per_90` 取 5th–95th 百分位裁剪。
+5. 進一步用 5 點 rolling 平滑 (`min_periods=2`) 讓 performance 與 playing-time 曲線更平順。
+6. 產出 `expected_ga_per_90` 與 `expected_minutes_per_90` 並與估值曲線 outer merge 成 `curves`。
+
+## 👤 Player Development 分析
+
+1. 取每位球員最新一次估值 (`latest_values`)。
+2. 重新計算個人實際 per-90 指標：把所有 `appearances` 依 `player_id` 聚合後，算
+
+   ```python
+   ga_per_90 = (goals + assists) / total_minutes * 90
+   minutes_per_90 = total_minutes / appearance_count
+   ```
+
+3. 將個人資料 merge 到 `curves`，得到該年齡與位置的期望值。
+4. 計算三個 residual：
+
+   ```
+   valuation_above_curve = actual_value - expected_value
+   performance_above_curve = ga_per_90 - expected_ga_per_90
+   minutes_above_curve = minutes_per_90 - expected_minutes_per_90
+   ```
+
+5. 用 `zscore()`（自備零標準差保護）把 residual 標準化。
+6. 建 composite aging score：`0.5 * valuation_z + 0.3 * performance_z + 0.2 * minutes_z`，再依分布切成 `declining / normal / aging well` 三個 tier。
+
+## 📊 視覺化與輸出
+
+- Plotly `make_subplots()` 一次畫出估值、goals+assists per 90、minutes per 90 三條曲線，legend 依 `sub_position` 著色。
+- Matplotlib 補一張「Actual vs Expected Market Value」散點，肉眼檢查 residual 合理性。
+- 最後把 `latest_values` 挑選的欄位寫成 `data/processed/development_outputs.parquet`（含期望值、差值、aging_score、development_tier 等），給 downstream Streamlit 或推薦系統直接 merge。
+
+> ✅ 只要更新 CSV、重新指定 `DATA_DIR`，整個 notebook 從載入、曲線建模、分數輸出到圖都會一起刷新，流程完全自動化。
