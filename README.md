@@ -60,7 +60,7 @@ Our system identifies players who:
 - **Advanced Filtering**: Filter by position, age, league, market value, and prediction scores
 - **Player Comparison**: Side-by-side comparison of multiple players
 - **Detailed Analytics**: Comprehensive statistics, performance trends, and transfer history
-- **AI Analysis**: GPT-4 powered scouting reports with strengths, weaknesses, and recommendations
+- **AI Analysis**: GPT-5 powered scouting reports with strengths, weaknesses, and recommendations
 
 ### 🐳 Docker Support
 - **One-Command Setup**: Fully containerized environment
