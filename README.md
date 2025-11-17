@@ -327,12 +327,12 @@ hackathon-fresh/
 
 **Purpose**: Predict 1-year market value growth percentage
 
-**Features** (100+ engineered features including):
-- Current performance metrics (goals, assists, minutes played)
-- Historical trends (rolling averages, growth rates)
-- Age and position-specific curves
-- League and competition strength
-- Transfer history and market dynamics
+**Features**:
+- Basic player profile: Age, height, current market value, contract years
+- Performance: minutes, goals/90, assists/90, deltas vs last season
+- Club & league context: club value, win rate, league strength, transfer flags
+- Categorical: position, sub-position, foot, club
+
 
 **Performance**:
 - RMSE: 0.2891
