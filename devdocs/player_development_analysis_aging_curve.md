@@ -126,7 +126,6 @@ performance_above_expectation = actual - expected
 ### **Valuation Slope / Momentum by Age**
 
 * `valuation_slope_12m`
-* `valuation_slope_24m`
 * `valuation_peak_age`
 * `years_since_peak_value`
 
@@ -300,7 +299,6 @@ development_tier      # ("aging well", "normal", "declining")
 
 peak_age
 years_since_peak_value
-valuation_slope_24m
 ```
 
 ---
@@ -321,7 +319,6 @@ valuation_slope_24m
   "minutes_above_curve": 0.12,
   "aging_score": 0.72,
   "development_tier": "aging well",
-  "valuation_slope_24m": 0.21,
   "peak_age": 27,
   "years_since_peak_value": 2
 }

@@ -31,7 +31,6 @@ def build_player_prompt(player_payload: Dict) -> str:
         "   - Analyze 'aging_score' (positive = performing above age expectations, negative = below) - WHY this matters for future value\n"
         "   - Explain 'valuation_above_curve' (€M above/below expected MV for age) - is market underpricing/overpricing this player?\n"
         "   - Assess 'performance_above_curve' (G+A above expected) and 'minutes_above_curve' - is on-field output exceeding age norms?\n"
-        "   - Evaluate 'valuation_slope_24m' (recent MV trajectory) - is momentum accelerating or declining?\n"
         "   - Consider 'years_since_peak_value' and 'peak_age' - where in career arc? Windows of opportunity?\n\n"
         
         "2. MARKET VALUE INEFFICIENCY:\n"

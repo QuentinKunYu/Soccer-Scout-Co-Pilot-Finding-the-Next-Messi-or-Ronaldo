@@ -179,7 +179,7 @@ class LLMClient:
                 f"the expected €{dev.expected_value_million:.1f}M for players of his age and position. "
                 f"His on-field output of {dev.performance_above_curve:+.2f} G+A above curve and {dev.minutes_above_curve:+.1f} minutes above expected "
                 f"demonstrates {'exceptional' if dev.performance_above_curve > 0.15 else 'solid'} productivity. "
-                f"With a 24-month valuation slope of {dev.valuation_slope_24m:+.2f}, his market trajectory is "
+                f"His market trajectory is "
                 f"{'accelerating' if dev.valuation_slope_24m > 0.3 else 'stable' if dev.valuation_slope_24m > 0 else 'declining'}. "
                 f"At {dev.years_since_peak_value:.1f} years {'past' if dev.years_since_peak_value > 0 else 'before'} peak age ({dev.peak_age:.0f}), "
                 f"the investment window {'requires urgency' if dev.years_since_peak_value > 2 else 'remains favorable' if dev.years_since_peak_value <= 0 else 'is still viable'}."

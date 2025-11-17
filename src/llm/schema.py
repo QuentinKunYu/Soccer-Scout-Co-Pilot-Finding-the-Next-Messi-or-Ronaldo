@@ -126,7 +126,6 @@ class DevelopmentSnapshot:
     development_tier: str
     peak_age: float
     years_since_peak_value: float
-    valuation_slope_24m: float
 
     @classmethod
     def from_row(cls, row: pd.Series) -> Optional["DevelopmentSnapshot"]:
@@ -143,7 +142,6 @@ class DevelopmentSnapshot:
             "development_tier",
             "peak_age",
             "years_since_peak_value",
-            "valuation_slope_24m",
         }
         if not set(required_cols).issubset(row.index):
             return None
@@ -159,5 +157,4 @@ class DevelopmentSnapshot:
             development_tier=str(row.get("development_tier", "unknown")),
             peak_age=float(row.get("peak_age", 0.0) or 0.0),
             years_since_peak_value=float(row.get("years_since_peak_value", 0.0) or 0.0),
-            valuation_slope_24m=float(row.get("valuation_slope_24m", 0.0) or 0.0),
         )
