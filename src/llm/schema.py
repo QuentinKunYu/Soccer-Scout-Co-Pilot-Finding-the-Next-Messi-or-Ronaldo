@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -66,6 +66,7 @@ class PlayerLLMInput:
     key_stats: KeyStats
     reg_shap_top_features: List[FeatureImportance]
     clf_shap_top_features: List[FeatureImportance]
+    development: Optional["DevelopmentSnapshot"]
 
     @classmethod
     def from_row(cls, row: pd.Series) -> "PlayerLLMInput":
@@ -89,12 +90,13 @@ class PlayerLLMInput:
         return cls(
             player_name=str(row.get("player_name", "")),
             age=int(row.get("age", 0) or 0),
-            position=str(row.get("position", "")),
+            position=str(row.get("sub_position", row.get("position", ""))),  # Use sub_position, fallback to position
             club_name=str(row.get("club_name", "")),
             league_name=str(row.get("league_name", "")),
             key_stats=KeyStats.from_row(row),
             reg_shap_top_features=_parse_feature_list(row.get("reg_shap_top_features")),
             clf_shap_top_features=_parse_feature_list(row.get("clf_shap_top_features")),
+            development=DevelopmentSnapshot.from_row(row),
             **numeric,
         )
 
@@ -103,5 +105,56 @@ class PlayerLLMInput:
 
         payload = asdict(self)
         payload["key_stats"] = asdict(self.key_stats)
+        if self.development is not None:
+            payload["development"] = asdict(self.development)
+        else:
+            payload.pop("development", None)
         return payload
 
+
+@dataclass
+class DevelopmentSnapshot:
+    """Container for aging-curve signals."""
+
+    expected_value_million: float
+    expected_ga_per_90: float
+    expected_minutes_per_90: float
+    valuation_above_curve: float
+    performance_above_curve: float
+    minutes_above_curve: float
+    aging_score: float
+    development_tier: str
+    peak_age: float
+    years_since_peak_value: float
+
+    @classmethod
+    def from_row(cls, row: pd.Series) -> Optional["DevelopmentSnapshot"]:
+        """Return an instance if the underlying columns exist."""
+
+        required_cols = {
+            "expected_value_million",
+            "expected_ga_per_90",
+            "expected_minutes_per_90",
+            "valuation_above_curve",
+            "performance_above_curve",
+            "minutes_above_curve",
+            "aging_score",
+            "development_tier",
+            "peak_age",
+            "years_since_peak_value",
+        }
+        if not set(required_cols).issubset(row.index):
+            return None
+
+        return cls(
+            expected_value_million=float(row.get("expected_value_million", 0.0) or 0.0),
+            expected_ga_per_90=float(row.get("expected_ga_per_90", 0.0) or 0.0),
+            expected_minutes_per_90=float(row.get("expected_minutes_per_90", 0.0) or 0.0),
+            valuation_above_curve=float(row.get("valuation_above_curve", 0.0) or 0.0),
+            performance_above_curve=float(row.get("performance_above_curve", 0.0) or 0.0),
+            minutes_above_curve=float(row.get("minutes_above_curve", 0.0) or 0.0),
+            aging_score=float(row.get("aging_score", 0.0) or 0.0),
+            development_tier=str(row.get("development_tier", "unknown")),
+            peak_age=float(row.get("peak_age", 0.0) or 0.0),
+            years_since_peak_value=float(row.get("years_since_peak_value", 0.0) or 0.0),
+        )
