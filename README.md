@@ -382,17 +382,6 @@ hackathon-fresh/
 
 ---
 
-## 🤝 Contributors
-
-This project was developed for the **2025 MLDS Hackathon** by:
-
-- **Team Member 1** - ML Models & Feature Engineering
-- **Team Member 2** - Dashboard & Frontend
-- **Team Member 3** - Data Processing & LLM Integration
-- **Team Member 4** - Docker & DevOps
-
----
-
 ## 🙏 Acknowledgments
 
 - **Northwestern MLDS Program** for organizing the hackathon
