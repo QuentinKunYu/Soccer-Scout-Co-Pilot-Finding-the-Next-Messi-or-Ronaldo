@@ -582,7 +582,6 @@ def _render_development_section(row: pd.Series) -> None:
 
     # Development stage summary
     years_since_peak = row.get("years_since_peak_value", 0)
-    valuation_slope = row.get("valuation_slope_24m", 0.0)
     tier_label = str(row.get("development_tier", "unknown")).title()
     
     st.markdown(

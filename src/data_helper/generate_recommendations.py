@@ -345,7 +345,7 @@ def generate_player_recommendations():
     recommendations_final.to_parquet(processed_dir / 'player_recommendations.parquet', index=False)
     
     # Also save a copy to app/mock_data for frontend use
-    app_mock_dir = project_root / "app" / "mock_data"
+    app_mock_dir = project_root / "data" / "processed"
     app_mock_dir.mkdir(parents=True, exist_ok=True)
     recommendations_final.to_csv(app_mock_dir / 'player_recommendations.csv', index=False)
     
