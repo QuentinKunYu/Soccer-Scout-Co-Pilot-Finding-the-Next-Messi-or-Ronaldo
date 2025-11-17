@@ -459,18 +459,13 @@ This project was developed for the **2025 MLDS Hackathon** by:
 
 ---
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
 ## 🙏 Acknowledgments
 
 - **Northwestern MLDS Program** for organizing the hackathon
 - **Kaggle** for providing the comprehensive player dataset
 - **Streamlit** for the excellent dashboard framework
 
+---
 
 <div align="center">
 
